@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+ultralytics
+opencv-python
+deep-sort-realtime
+supabase
+python-dotenv
+websockets
+httpx
+numpy<2.0.0
+python-multipart
