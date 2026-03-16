@@ -4,23 +4,24 @@ from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
 class CraneDetector:
-    def __init__(self, model_name='yolov8n.pt'):
-        # Using yolov8n for speed, can be upgraded to s or m
+    def __init__(self, model_name='yolov8s.pt'):
+        # Upgraded to yolov8s.pt (Small) for significantly better accuracy than Nano
         self.model = YOLO(model_name)
-        self.tracker = DeepSort(max_age=30, n_init=3, nms_max_overlap=1.0, max_cosine_distance=0.2)
+        self.tracker = DeepSort(max_age=30, n_init=2, nms_max_overlap=1.0, max_cosine_distance=0.2)
         
-        # COCO Classes: person (0), forklift (58), crane (truck is 7 - closest proxy if no custom model)
-        # For a production crane, we'd usually train a custom class.
-        # Here we map standard COCO to our needs.
-        self.target_classes = [0, 58, 7] # person, forklift, truck (acting as crane)
+        # Expanded classes to include more industrial-looking vehicles
+        # 0: person, 5: bus (large machinery), 7: truck (cranes), 58: forklift
+        self.target_classes = [0, 5, 7, 58]
 
     def detect_and_track(self, frame):
-        results = self.model(frame, classes=self.target_classes, verbose=False)[0]
+        # Increased conf threshold to 0.4 for higher precision
+        results = self.model(frame, classes=self.target_classes, verbose=False, conf=0.4)[0]
         
         detections = []
         for r in results.boxes.data.tolist():
             x1, y1, x2, y2, score, class_id = r
-            if score > 0.3:
+            # Additional layer of filtering
+            if score > 0.4:
                 # Format for DeepSORT: [([x, y, w, h], confidence, class_name), ...]
                 w = x2 - x1
                 h = y2 - y1

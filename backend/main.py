@@ -9,7 +9,7 @@ from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from detector import CraneDetector
-from zone_logic import check_zones
+from zone_logic import check_zones, is_box_in_zone
 from alert_engine import AlertEngine
 from dotenv import load_dotenv
 
@@ -95,6 +95,19 @@ async def update_zones(zones: list):
             machine_states[zone['id']] = False
     return {"status": "Zones updated"}
 
+@app.post("/zones/toggle")
+async def toggle_zone(data: dict):
+    global current_zones
+    zone_id = data.get("zone_id")
+    enabled = data.get("enabled", True)
+    
+    for zone in current_zones:
+        if zone['id'] == zone_id:
+            zone['active'] = enabled
+            break
+            
+    return {"status": "success", "zones": current_zones}
+
 @app.get("/zones")
 async def get_zones():
     return current_zones
@@ -140,7 +153,7 @@ async def websocket_endpoint(websocket: WebSocket):
             # Run Inference
             detections = detector.detect_and_track(frame)
             
-            # Check Zones
+            # Check Zones (All zones, logic handles internal skipping)
             zone_results = check_zones(detections, current_zones)
             
             # Process Alerts
@@ -158,18 +171,34 @@ async def websocket_endpoint(websocket: WebSocket):
                 zone_machine_active = machine_states.get(zone_id, False)
                 # DANGER condition: Person in zone AND (Machine active via AI or manual)
                 is_danger = status['worker_count'] > 0 and zone_machine_active
+                
+                # CRITICAL: If person is literally TOUCHING/INSIDE the machine (collision_risk)
+                if status.get('collision_risk'):
+                    is_danger = True
+                    alerts.append(f"CRITICAL: {status['name']} - Person TOUCHING Machine!")
+                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], type="PROXIMITY_VIOLATION"))
+
                 status['danger'] = is_danger 
                 status['machine_active'] = zone_machine_active
                 status['warning'] = status['worker_count'] > 0 # Warning if person is in zone at all
                 
-                if is_danger:
+                if is_danger and not status.get('collision_risk'):
                     alerts.append(f"CRITICAL: {status['name']} - Worker in Danger Zone!")
                     asyncio.create_task(alert_engine.save_incident(zone_id, status['name']))
-                elif status['warning']:
+                elif status['warning'] and not is_danger:
                     alerts.append(f"WARNING: {status['name']} - Worker touching boundary")
 
             # Draw Overlay
             for det in detections:
+                # SKIP detection if it is inside a DISABLED zone
+                skip_det = False
+                for zone in current_zones:
+                    if not zone.get('active', True):
+                        if is_box_in_zone(det['bbox'], zone['polygon']):
+                            skip_det = True
+                            break
+                if skip_det: continue
+
                 bbox = det['bbox']
                 color = (0, 255, 0)
                 if det['class'] == 'person': color = (0, 255, 255) # Yellow for persons
@@ -178,16 +207,25 @@ async def websocket_endpoint(websocket: WebSocket):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             for zone in current_zones:
+                is_active = zone.get('active', True)
                 points = [tuple(p) for p in zone['polygon']]
-                is_danger = zone_results[zone['id']]['danger']
-                # Red if danger, Teal if person in zone but no machine, Yellow/Amber otherwise
-                if is_danger: color = (0, 0, 255) # RED
-                elif zone_results[zone['id']]['worker_count'] > 0: color = (0, 255, 255) # YELLOW
-                else: color = (0, 255, 0) # GREEN
+                
+                # Determine Color
+                if not is_active:
+                    color = (128, 128, 128) # GRAY for OFF zones
+                else:
+                    result = zone_results.get(zone['id'], {})
+                    is_danger = result.get('danger', False)
+                    worker_count = result.get('worker_count', 0)
+                    
+                    if is_danger: color = (0, 0, 255) # RED
+                    elif worker_count > 0: color = (0, 255, 255) # YELLOW
+                    else: color = (0, 255, 0) # GREEN
                 
                 for i in range(len(points)):
                     cv2.line(frame, points[i], points[(i+1)%len(points)], color, 2)
-                    cv2.putText(frame, zone['name'], (points[0][0], points[0][1] - 10), 
+                    label = f"{zone['name']} [OFF]" if not is_active else zone['name']
+                    cv2.putText(frame, label, (points[0][0], points[0][1] - 10), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
             # Encode and Send

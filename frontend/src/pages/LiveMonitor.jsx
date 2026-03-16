@@ -11,6 +11,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
   const canvasRef = useRef(null);
 
   const [machineStates, setMachineStates] = React.useState({});
+  const [enabledZones, setEnabledZones] = React.useState({ "A1": true, "A2": true });
   const focusZone = selectedZone;
   const setFocusZone = onZoneSelect;
   const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')); // Warning beep sound
@@ -69,6 +70,18 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
   }, [zoneStatus]);
 
   React.useEffect(() => {
+    if (Object.keys(zoneStatus).length > 0) {
+      setEnabledZones(prev => {
+        const next = { ...prev };
+        Object.keys(zoneStatus).forEach(id => {
+          if (next[id] === undefined) next[id] = true;
+        });
+        return next;
+      });
+    }
+  }, [zoneStatus]);
+
+  React.useEffect(() => {
     if (data?.machine_states !== undefined) {
       setMachineStates(data.machine_states);
     }
@@ -91,6 +104,18 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
       Object.keys(machineStates).forEach(k => allNew[k] = newState);
       setMachineStates(allNew);
     }
+  };
+
+  const toggleZoneEnabled = async (zoneId) => {
+    const newState = !enabledZones[zoneId];
+    setEnabledZones(prev => ({ ...prev, [zoneId]: newState }));
+    
+    // Sync with backend so it stops processing this zone
+    await fetch('/api/zones/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone_id: zoneId, enabled: newState })
+    });
   };
 
   return (
@@ -157,6 +182,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
             
             <div className="absolute bottom-4 left-4 flex gap-2">
                {Object.entries(zoneStatus).map(([id, status]) => {
+                  const isEnabled = enabledZones[id] !== false;
                   const isSelected = focusZone === id || status.name === focusZone || `Zone ${id}` === focusZone;
                   return (
                      <button 
@@ -164,11 +190,12 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
                         onClick={() => setFocusZone(isSelected ? null : id)}
                         className={clsx(
                            "px-3 py-1 rounded-full text-[10px] font-mono border transition-all flex items-center gap-2",
+                           !isEnabled ? "bg-slate-900/60 border-slate-700 text-slate-500 opacity-60" :
                            isSelected ? "bg-teal-500/20 border-teal-500 text-teal-400" : "bg-black/60 border-white/10 text-slate-500 backdrop-blur-md"
                         )}
                       >
-                         <div className={`w-1 h-1 rounded-full ${status.danger ? 'bg-red-500 animate-pulse' : 'bg-teal-500/40'}`} />
-                         {status.name}
+                         <div className={`w-1 h-1 rounded-full ${!isEnabled ? 'bg-slate-700' : status.danger ? 'bg-red-500 animate-pulse' : 'bg-teal-500/40'}`} />
+                         {status.name} {!isEnabled && '[OFF]'}
                      </button>
                   );
                })}
@@ -201,6 +228,8 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
                                danger={status.danger}
                                machineActive={machineStates[id]}
                                onToggleMachine={() => toggleMachine(id)}
+                               enabled={enabledZones[id]}
+                               onToggleEnabled={() => toggleZoneEnabled(id)}
                            />
                         </div>
                     );

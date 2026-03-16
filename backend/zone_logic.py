@@ -41,27 +41,43 @@ def check_zones(detections, zones):
     for zone in zones:
         zone_id = zone['id']
         poly = zone['polygon']
+        is_active = zone.get('active', True)
         
         workers_in_zone = []
-        cranes_in_zone = []
+        machines_in_zone = []
         movement_in_zone = False
+        collision_risk = False
         
-        for det in detections:
-            if is_box_in_zone(det['bbox'], poly):
-                if det['class'] == 'person':
-                    workers_in_zone.append(det['id'])
-                elif det['class'] in ['truck', 'forklift']: # proxy for cranes
-                    cranes_in_zone.append(det['id'])
-                
-                # Detect any movement/shaking in zone
-                if det.get('movement', 0) > 1.2: # High sensitivity for shaking
-                    movement_in_zone = True
+        # 1. Only process detections if zone is active
+        if is_active:
+            for det in detections:
+                if is_box_in_zone(det['bbox'], poly):
+                    if det['class'] == 'person':
+                        workers_in_zone.append(det)
+                    elif det['class'] in ['truck', 'forklift', 'bus', 'train']:
+                        machines_in_zone.append(det)
+                    
+                    # Detect any movement/shaking in zone
+                    if det.get('movement', 0) > 1.2: # High sensitivity for shaking
+                        movement_in_zone = True
+            
+            # 2. Check for Proximity/Overlap (only for active zones)
+            for worker in workers_in_zone:
+                w_box = worker['bbox']
+                for machine in machines_in_zone:
+                    m_box = machine['bbox']
+                    if not (w_box[2] < m_box[0] or w_box[0] > m_box[2] or 
+                            w_box[3] < m_box[1] or w_box[1] > m_box[3]):
+                        collision_risk = True
+                        break
         
         zone_results[zone_id] = {
             "name": zone['name'],
+            "active": is_active,
             "worker_count": len(workers_in_zone),
-            "crane_active": len(cranes_in_zone) > 0 or movement_in_zone,
-            "danger": False, # Will be calculated in main loop
+            "crane_active": len(machines_in_zone) > 0 or movement_in_zone,
+            "danger": False, # Calculated in main loop
+            "collision_risk": collision_risk,
             "polygon": poly,
             "movement": movement_in_zone
         }
