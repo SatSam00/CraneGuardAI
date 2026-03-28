@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { useWebSocketData } from '../context/WebSocketContext';
 import { StatCard } from '../components/StatCard';
 import { IncidentTable } from '../components/IncidentTable';
-import { Shield, AlertCircle, ScanEye, Timer, CheckCircle } from 'lucide-react';
+import { AlertBanner } from '../components/AlertBanner';
+import { Shield, AlertCircle, ScanEye, Timer, CheckCircle, Loader2 } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { clsx } from 'clsx';
 
 export default function Dashboard({ onZoneSelect }) {
+  const { data: wsData, status } = useWebSocketData();
   const [incidents, setIncidents] = useState([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState([]);
+  const [acknowledgedIds, setAcknowledgedIds] = useState([]);
   const [stats, setStats] = useState({
       violations: 0,
       score: 100,
@@ -16,37 +21,40 @@ export default function Dashboard({ onZoneSelect }) {
       trend: []
   });
 
-  const fetchStats = async () => {
-    try {
-        const [incR, statR] = await Promise.all([
-          fetch('/api/incidents'),
-          fetch('/api/stats')
-        ]);
-        const incData = await incR.json();
-        const statData = await statR.json();
-        
-        setIncidents(incData);
-        setStats({
-            violations: statData.today_violations,
-            score: statData.safety_score,
-            zones: statData.monitored_zones || 4,
-            reaction: statData.avg_reaction_time,
-            distribution: statData.distribution || {},
-            trend: statData.trend || []
-        });
-    } catch (err) {
-        console.error("Dashboard sync error:", err);
-    }
-  };
+  const displayIncidents = incidents.map(inc => ({
+      ...inc,
+      acknowledged: inc.acknowledged || acknowledgedIds.includes(inc.id)
+  }));
 
+  const latestUnacknowledged = displayIncidents.find(inc => !inc.acknowledged && !dismissedAlertIds.includes(inc.id));
+  // Sync with WebSocket data
   useEffect(() => {
-    fetchStats();
-    const timer = setInterval(fetchStats, 10000);
-    return () => clearInterval(timer);
-  }, []);
+    if (wsData?.stats) {
+      setStats({
+          violations: wsData.stats.today_violations,
+          score: wsData.stats.safety_score,
+          zones: wsData.stats.monitored_zones || 4,
+          reaction: wsData.stats.avg_reaction_time,
+          distribution: wsData.stats.distribution || {},
+          trend: wsData.stats.trend || []
+      });
+    }
+    if (wsData?.incidents) {
+      setIncidents(wsData.incidents);
+    }
+  }, [wsData]);
+
+  if (status !== 'connected' && !wsData) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500 h-full bg-[#0a0c0f]">
+         <Loader2 className="animate-spin text-teal-500" size={48} />
+         <span className="font-mono text-xs uppercase tracking-widest">Awaiting Real-Time Sync...</span>
+      </div>
+    );
+  }
 
   const handleAcknowledge = async (id) => {
-      setIncidents(prev => prev.map(inc => inc.id === id ? {...inc, acknowledged: true} : inc));
+      setAcknowledgedIds(prev => [...prev, id]);
   };
 
   const chartData = stats.trend.length > 0 ? stats.trend : [
@@ -56,7 +64,16 @@ export default function Dashboard({ onZoneSelect }) {
   ];
 
   return (
-    <div className="p-8 flex flex-col gap-8 h-full overflow-y-auto bg-[#0a0c0f] text-slate-200">
+    <div className="p-8 flex flex-col gap-8 h-full overflow-y-auto bg-[#0a0c0f] text-slate-200 relative">
+      <AlertBanner 
+        alerts={latestUnacknowledged ? [`${latestUnacknowledged.type} IN ${latestUnacknowledged.zone_name}`] : []} 
+        image={latestUnacknowledged?.frame_url}
+        onDismiss={() => {
+            const unackIds = displayIncidents.filter(i => !i.acknowledged).map(i => i.id);
+            setDismissedAlertIds(prev => [...prev, ...unackIds]);
+        }}
+      />
+      
       <div className="flex justify-between items-center">
         <div>
             <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">ANALYTICS DASHBOARD</h2>
@@ -173,7 +190,7 @@ export default function Dashboard({ onZoneSelect }) {
       </div>
 
       <div className="mt-4">
-          <IncidentTable incidents={incidents} onAcknowledge={handleAcknowledge} />
+          <IncidentTable incidents={displayIncidents} onAcknowledge={handleAcknowledge} />
       </div>
     </div>
   );

@@ -17,8 +17,50 @@ load_dotenv()
 
 from contextlib import asynccontextmanager
 
+# State management - machine active per zone
+machine_states = {"A1": False, "A2": False}
+last_movement_time = {"A1": 0, "A2": 0}
+
+# Real-time analytics cache
+cached_stats = {"today_violations": 0, "safety_score": 100, "avg_reaction_time": 0, "distribution": {}, "trend": []}
+cached_incidents = []
+
+async def update_analytics_loop():
+    """Background loop to update analytics from DB every 5 seconds."""
+    global cached_stats, cached_incidents
+    while True:
+        try:
+            # Update incidents and stats in parallel
+            inc_task = alert_engine.get_incidents()
+            stat_task = alert_engine.get_stats()
+            
+            inc_res, stat_res = await asyncio.gather(inc_task, stat_task)
+            
+            cached_incidents = inc_res
+            cached_stats = stat_res
+        except Exception as e:
+            print(f"Analytics background loop error: {e}")
+        
+        await asyncio.sleep(5)
+
+async def refresh_analytics_now():
+    """Immediately refresh cached stats and incidents."""
+    global cached_stats, cached_incidents
+    try:
+        inc_res, stat_res = await asyncio.gather(
+            alert_engine.get_incidents(),
+            alert_engine.get_stats()
+        )
+        cached_incidents = inc_res
+        cached_stats = stat_res
+    except Exception as e:
+        print(f"Immediate refresh error: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Start analytics loop
+    asyncio.create_task(update_analytics_loop())
+    
     # Attempt to load zones from Supabase
     try:
         zones = await alert_engine.get_zones()
@@ -49,10 +91,6 @@ current_zones = [
     {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},
     {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True}
 ]
-
-# State management - machine active per zone
-machine_states = {"A1": False, "A2": False}
-last_movement_time = {"A1": 0, "A2": 0}
 
 @app.get("/incidents")
 async def get_incidents():
@@ -123,27 +161,40 @@ async def websocket_endpoint(websocket: WebSocket):
             src = int(src)
             
         print(f"Attempting to open camera source: {src}")
-        # Use CAP_DSHOW on Windows for faster/better camera access
-        cap = cv2.VideoCapture(src, cv2.CAP_DSHOW) if isinstance(src, int) else cv2.VideoCapture(src)
         
-        if not cap.isOpened() and isinstance(src, int):
-            for i in range(3):
-                if i == src: continue
-                print(f"Index {src} failed, trying {i}...")
-                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-                if cap.isOpened():
-                    print(f"Successfully opened camera at index {i}")
-                    break
+        # Try different backends for Windows if it's an index
+        backends = [cv2.CAP_ANY, cv2.CAP_DSHOW, cv2.CAP_MSMF]
+        
+        def try_open(source, backend_list):
+            for b in backend_list:
+                c = cv2.VideoCapture(source, b) if isinstance(source, int) else cv2.VideoCapture(source)
+                if c.isOpened():
+                    return c
+            return None
 
-        if not cap.isOpened():
+        cap = try_open(src, backends)
+        
+        if not cap and isinstance(src, int):
+            for i in range(5): # Try more indices
+                if i == src: continue
+                print(f"Index {i} ... ", end="")
+                cap = try_open(i, backends)
+                if cap:
+                    print(f"Success!")
+                    break
+                print("Failed")
+
+        if not cap or not cap.isOpened():
             print(f"CRITICAL: Could not open any camera source.")
-            await websocket.send_json({"error": "Camera source unreachable"})
+            error_msg = "No camera found. Please connect a camera or set CAMERA_SOURCE to a video file path in .env"
+            await websocket.send_json({"error": error_msg})
             return
 
         # Optimize for performance: set resolution
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Minimize latency by keeping only the latest frame
 
         while True:
             success, frame = cap.read()
@@ -160,23 +211,34 @@ async def websocket_endpoint(websocket: WebSocket):
             alerts = []
             curr_time = time.time()
             for zone_id, status in zone_results.items():
+                has_worker = status['worker_count'] > 0
+                
                 # AUTOMATIC ACTIVATION: If crane detected or movement detected, start machine for this zone
-                if status['movement']:
+                # AUTO-FIX: Do not allow AI to start machine if a worker is in the zone!
+                if status['movement'] and not has_worker:
                     machine_states[zone_id] = True
                     last_movement_time[zone_id] = curr_time
-                elif curr_time - last_movement_time.get(zone_id, 0) > 2.0:
-                    # After 2 seconds of stillness, revert to IDLE
+                elif curr_time - last_movement_time.get(zone_id, 0) > 0.8:
+                    # After 0.8 seconds of stillness, revert to IDLE for snappy response
                     machine_states[zone_id] = False
                 
                 zone_machine_active = machine_states.get(zone_id, False)
                 # DANGER condition: Person in zone AND (Machine active via AI or manual)
-                is_danger = status['worker_count'] > 0 and zone_machine_active
+                is_danger = has_worker and zone_machine_active
                 
                 # CRITICAL: If person is literally TOUCHING/INSIDE the machine (collision_risk)
                 if status.get('collision_risk'):
                     is_danger = True
                     alerts.append(f"CRITICAL: {status['name']} - Person TOUCHING Machine!")
-                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], type="PROXIMITY_VIOLATION"))
+                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], type="PROXIMITY_VIOLATION", frame=frame))
+                    # Trigger immediate analytics refresh
+                    asyncio.create_task(refresh_analytics_now())
+
+                # AUTOMATIC FIX: If danger is detected, instantly cut off the machine
+                if is_danger:
+                    machine_states[zone_id] = False
+                    zone_machine_active = False
+                    last_movement_time[zone_id] = 0
 
                 status['danger'] = is_danger 
                 status['machine_active'] = zone_machine_active
@@ -184,11 +246,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if is_danger and not status.get('collision_risk'):
                     alerts.append(f"CRITICAL: {status['name']} - Worker in Danger Zone!")
-                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name']))
+                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], frame=frame))
+                    # Trigger immediate analytics refresh
+                    asyncio.create_task(refresh_analytics_now())
                 elif status['warning'] and not is_danger:
                     alerts.append(f"WARNING: {status['name']} - Worker touching boundary")
 
-            # Draw Overlay
+            # Encode and Send
             for det in detections:
                 # SKIP detection if it is inside a DISABLED zone
                 skip_det = False
@@ -238,6 +302,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 "detections": detections,
                 "zone_status": zone_results,
                 "machine_states": machine_states,
+                "stats": cached_stats,
+                "incidents": cached_incidents,
                 "timestamp": datetime.utcnow().isoformat()
             }
             

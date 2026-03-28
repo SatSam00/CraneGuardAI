@@ -1,13 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocketData } from '../context/WebSocketContext';
 import { AlertBanner } from '../components/AlertBanner';
 import { ZoneCard } from '../components/ZoneCard';
 import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 
 export default function LiveMonitor({ selectedZone, onZoneSelect }) {
-  const host = window.location.hostname || '127.0.0.1';
-  const { data, status } = useWebSocket(`ws://${host}:8200/ws/feed`);
+  const { data, status } = useWebSocketData();
   const canvasRef = useRef(null);
 
   const [machineStates, setMachineStates] = React.useState({});
@@ -118,9 +117,21 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
     });
   };
 
+  const [dismissedAlerts, setDismissedAlerts] = React.useState(false);
+
+  useEffect(() => {
+    if (alerts.length > 0) {
+      setDismissedAlerts(false);
+    }
+  }, [alerts]);
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden relative">
-      <AlertBanner alerts={alerts} />
+      <AlertBanner 
+        alerts={!dismissedAlerts ? alerts : []} 
+        image={data?.frame ? `data:image/jpeg;base64,${data.frame}` : null}
+        onDismiss={() => setDismissedAlerts(true)}
+      />
       
       <div className="p-8 grid grid-cols-12 gap-8 flex-1 overflow-auto relative z-10">
         <div className="col-span-9 flex flex-col gap-4">
@@ -168,9 +179,25 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
           
           <div className="relative aspect-video bg-black rounded-b-xl border-x border-b border-white/5 ring-1 ring-white/5 overflow-hidden shadow-2xl">
             {status !== 'connected' ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-card text-white/20 gap-4">
-                  <Loader2 className="animate-spin" size={48} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-card text-white/20 gap-4 p-8 text-center">
+                  <Loader2 className="animate-spin text-teal-500" size={48} />
                   <span className="font-mono text-xs uppercase tracking-widest">Awaiting Video Stream...</span>
+                </div>
+            ) : data?.error ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/20 backdrop-blur-sm text-red-500 gap-4 p-8 text-center border border-red-500/20">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                    <h3 className="font-display font-bold text-lg uppercase tracking-tight">Camera Initialization Failed</h3>
+                    <p className="font-mono text-xs max-w-md bg-black/40 p-4 rounded border border-white/5">{data.error}</p>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-6 py-2 bg-red-500 text-white font-bold text-[10px] tracking-widest uppercase rounded hover:bg-red-600 transition-colors"
+                    >
+                        Retry Connection
+                    </button>
                 </div>
             ) : null}
             <canvas 

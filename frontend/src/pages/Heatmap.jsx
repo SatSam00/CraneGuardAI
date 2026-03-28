@@ -1,46 +1,50 @@
 import React, { useState, useEffect } from 'react';
+import { useWebSocketData } from '../context/WebSocketContext';
 import { clsx } from 'clsx';
 import { Loader2, ArrowUpRight } from 'lucide-react';
 
 export default function Heatmap({ selectedZone, onZoneSelect }) {
+  const { data: wsData } = useWebSocketData();
   const [stats, setStats] = useState({ distribution: {} });
   const [loading, setLoading] = useState(true);
+  const [zoneStatus, setZoneStatus] = useState({});
+
+  // Sync with WebSocket data
+  useEffect(() => {
+    if (wsData?.stats) {
+      setStats(wsData.stats);
+      setLoading(false);
+    }
+    if (wsData?.zone_status) {
+      setZoneStatus(wsData.zone_status);
+    }
+  }, [wsData]);
 
   // Define a fixed grid representing the floor plan
   // Rows: A-E, Cols: 1-7
   const rows = ['A', 'B', 'C', 'D', 'E'];
   const cols = [1, 2, 3, 4, 5, 6, 7];
 
-  const fetchStats = async () => {
-    try {
-      const resp = await fetch('/api/stats');
-      const data = await resp.json();
-      setStats(data);
-      setLoading(false);
-    } catch (err) {
-      console.error("Heatmap fetch error:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-    const timer = setInterval(fetchStats, 10000);
-    return () => clearInterval(timer);
-  }, []);
-
   const getZoneStats = (row, col) => {
     const id = `${row}${col}`;
     // Check for exact match or partial match in distribution keys
     const count = stats.distribution[id] || stats.distribution[`Zone ${id}`] || 0;
     
+    // Live status check
+    const liveId = Object.keys(zoneStatus).find(k => k === id || k === `Zone ${id}` || zoneStatus[k].name === id || zoneStatus[k].name === `Zone ${id}`);
+    const liveData = liveId ? zoneStatus[liveId] : null;
+
     let risk = 'low';
-    if (count > 10) risk = 'high';
-    else if (count > 3) risk = 'medium';
+    if (count > 10 || liveData?.danger) risk = 'high';
+    else if (count > 3 || liveData?.worker_count > 0) risk = 'medium';
     
-    return { count, risk };
+    return { count, risk, liveData };
   };
 
-  const getRiskStyles = (risk) => {
+  const getRiskStyles = (risk, liveData) => {
+    if (liveData?.danger) return 'bg-red-500/60 border-red-400 shadow-[0_0_30px_rgba(239,68,68,0.4)] animate-pulse';
+    if (liveData?.worker_count > 0) return 'bg-amber-500/40 border-amber-400 animate-pulse';
+
     switch (risk) {
       case 'high': return 'bg-red-500/40 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]';
       case 'medium': return 'bg-amber-500/20 border-amber-500/30';
@@ -59,6 +63,11 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                 SYNCED: {selectedZone}
               </div>
             )}
+            {/* Added real-time sync indicator */}
+            <div className="flex items-center gap-1.5 ml-2">
+               <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+               <span className="text-[8px] font-mono text-teal-500/60 uppercase tracking-widest font-bold">Live Stream</span>
+            </div>
           </div>
           <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em]">Temporal Aggregation of Aisle Violations</p>
         </div>
@@ -82,8 +91,8 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                   <div className="flex flex-col gap-2">
                        <div className="text-[8px] font-mono text-slate-500 uppercase tracking-widest text-right">Risk Gradient</div>
                        <div className="flex gap-4">
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> CRITICAL</div>
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> ELEVATED</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> CRITICAL / LIVE ALERT</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> ELEVATED / LIVE PRESENCE</div>
                            <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-teal-500/10 border border-teal-400 rounded-sm" /> NOMINAL</div>
                        </div>
                   </div>
@@ -115,10 +124,18 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                       onClick={() => onZoneSelect(isSelected ? null : `Zone ${id}`)}
                       className={clsx(
                         "group relative rounded-xl border transition-all duration-500 hover:scale-105 hover:z-20 cursor-pointer flex flex-col items-center justify-center overflow-hidden",
-                        getRiskStyles(data.risk),
+                        getRiskStyles(data.risk, data.liveData),
                         isSelected ? "ring-2 ring-teal-500 border-teal-500 scale-105 z-10" : "grayscale-[0.5]"
                       )}
                     >
+                        {/* Live Worker Indicator */}
+                        {data.liveData?.worker_count > 0 && (
+                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 px-1.5 py-0.5 rounded-full border border-white/10">
+                            <div className={clsx("w-1 h-1 rounded-full", data.liveData.danger ? "bg-red-500 animate-ping" : "bg-amber-500 animate-pulse")} />
+                            <span className="text-[6px] font-mono text-white/80">{data.liveData.worker_count} LIVE</span>
+                          </div>
+                        )}
+
                         {/* Zone Identifier label */}
                         <div className="absolute top-3 left-3 flex flex-col">
                            <span className={clsx("text-[10px] font-mono font-bold tracking-tighter", isSelected ? "text-teal-400" : "text-white/40")}>{r}{c}</span>
@@ -139,6 +156,9 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                            <span className="text-[10px] font-mono text-teal-400 uppercase tracking-widest mb-1 font-bold">Zone Section {r}{c}</span>
                            <div className="h-[1px] w-12 bg-teal-500/20 my-2" />
                            <span className="text-xl font-display font-bold text-white mb-1">{data.count} EVENTS</span>
+                           {data.liveData?.worker_count > 0 && (
+                             <p className="text-[8px] font-mono text-amber-500 uppercase tracking-tighter mb-1">Worker Currently Active</p>
+                           )}
                            <p className="text-[8px] font-mono text-slate-500 leading-tight">Spatial accumulation reflects historical safety infringements per 24h segment.</p>
                         </div>
                     </div>

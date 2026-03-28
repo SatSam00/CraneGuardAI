@@ -1,85 +1,85 @@
-# CraneAI: Crane Aisle Safety Monitoring System
+# 🏗️ CraneGuard AI: Safety Monitoring System
 
-CraneAI is a full-stack AI-powered safety monitoring system designed for industrial environments. It uses YOLOv8 for real-time person and vehicle detection, DeepSORT for tracking, and provides a modern web interface for live monitoring, analytics, and heatmap visualization.
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![YOLOv8](https://img.shields.io/badge/YOLOv8-00FFAA?style=for-the-badge)](https://ultralytics.com/)
 
-## Features
-- **Live AI Feed**: Real-time person/crane/forklift detection with zone violation alerts.
-- **Dynamic Zones**: Define safety polygons directly in the UI.
-- **Dashboard**: Track violations, safety scores, and reaction times.
-- **Heatmap**: Visualize high-risk factory areas based on historical data.
-- **Alerts**: Instant Telegram notifications on safety breaches.
-- **Persistence**: Incidents and configurations saved via Supabase.
+**CraneGuard AI** is a cutting-edge, full-stack safety monitoring solution designed for industrial environments. By combining deep learning (YOLOv8 + DeepSORT) with a modern web interface, it provides real-time protection for workers in high-risk zones near heavy machinery.
 
-## Tech Stack
-- **Backend**: FastAPI, YOLOv8 (Ultralytics), DeepSORT, OpenCV, Supabase.
-- **Frontend**: React, Vite, TailwindCSS, Recharts, Framer Motion.
-- **Alerts**: Telegram Bot API.
+---
 
-## Setup Instructions
+## 🚀 Key Features
+
+*   **📺 Live AI Feed**: Real-time person, crane, and forklift detection with low-latency WebSocket streaming.
+*   **📐 Dynamic Safety Zones**: Draw and manage safety polygons directly in the web UI.
+*   **📊 Analytics Dashboard**: Comprehensive view of safety trends, violation logs, and performance metrics.
+*   **🔥 Risk Heatmaps**: Spatial visualization of high-incident areas based on historical bridge violations.
+*   **📱 Instant Alerts**: Multi-channel notifications via Telegram and local UI banners with captured snapshots.
+*   **☁️ Cloud Integration**: Persistent storage of configurations and incident logs via Supabase.
+
+---
+
+## 🛠️ Tech Stack
+
+### Backend
+- **Framework**: FastAPI
+- **AI/ML**: YOLOv8, DeepSORT
+- **Computer Vision**: OpenCV
+- **Database**: Supabase (Postgres)
+
+### Frontend
+- **Framework**: React + Vite
+- **Styling**: TailwindCSS + Framer Motion
+- **Charts**: Recharts
+
+---
+
+## 📖 Documentation
+
+For a deep dive into the architecture, API reference, and troubleshooting, check out our:
+👉 **[Detailed Project Documentation](./documentation.md)**
+
+---
+
+## 🛠️ Quick Start
 
 ### 1. Backend Setup
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Or venv\Scripts\activate on Windows
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
-Create a `.env` file in the `backend/` folder based on `.env.example`:
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-CAMERA_SOURCE=0  # 0 for webcam, or rtsp://... for IP cam
-```
-
-### 3. Database Setup (Supabase)
-Create the following tables in Supabase:
-
-**Table: `incidents`**
-- `id` (uuid, primary key)
-- `zone_id` (text)
-- `zone_name` (text)
-- `type` (text)
-- `severity` (text)
-- `timestamp` (timestamptz)
-- `acknowledged` (bool)
-- `frame_url` (text, optional)
-
-**Table: `zones`**
-- `id` (text, primary key)
-- `name` (text)
-- `polygon` (jsonb)
-- `active` (bool)
-
-### 4. Telegram Bot Setup
-1. Chat with [@BotFather](https://t.me/botfather) to create a new bot.
-2. Get the `TELEGRAM_BOT_TOKEN`.
-3. Get your `TELEGRAM_CHAT_ID` by messaging [@userinfobot](https://t.me/userinfobot).
-
-### 5. Running the Application
-**Backend:**
-```bash
-uvicorn main:app --reload
-```
-**Frontend:**
+### 2. Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Deployment (Render.com)
-1. **Backend**: 
-   - New Web Service.
-   - Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`.
-   - Add environment variables.
-2. **Frontend**:
-   - New Static Site.
-   - Build Command: `npm run build`.
-   - Publish Directory: `dist`.
+### 3. Environment Configuration
+Create a `.env` in the `backend/` folder:
+```env
+SUPABASE_URL=your_url
+SUPABASE_KEY=your_key
+TELEGRAM_BOT_TOKEN=your_token
+TELEGRAM_CHAT_ID=your_chat_id
+CAMERA_SOURCE=0  # index or rtsp://
+```
 
-## License
-MIT
+---
+
+## 📄 License
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<p align="center">
+</p>
+
+cd craneai   
+PS D:\PERS PROJECTS\CraneGuard AI\craneai> cd .\frontend\                                             
+PS D:\PERS PROJECTS\CraneGuard AI\craneai\frontend> npm run dev   
+>> 
+

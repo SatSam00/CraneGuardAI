@@ -11,13 +11,19 @@ export default function Settings() {
   });
 
   const [zones, setZones] = useState([]);
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
 
   useEffect(() => {
     fetch('/api/zones').then(r => r.json()).then(setZones);
   }, []);
 
   const handleSave = async () => {
-      // POST to /api/zones or /api/config
+      await fetch('/api/zones', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zones)
+      });
       alert("Settings saved successfully!");
   };
 
@@ -96,7 +102,10 @@ export default function Settings() {
                         <Map size={20} className="text-pink-500" />
                         <h3 className="font-display font-bold">SAFETY ZONES</h3>
                     </div>
-                    <button className="bg-teal-500 text-background p-1 rounded hover:bg-teal-400 transition-colors">
+                    <button 
+                        onClick={() => setIsDrawingMode(!isDrawingMode)}
+                        className="bg-teal-500 text-background p-1 rounded hover:bg-teal-400 transition-colors"
+                    >
                         <Plus size={16} />
                     </button>
                 </div>
@@ -110,15 +119,25 @@ export default function Settings() {
                             </div>
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button className="p-2 text-slate-500 hover:text-white transition-colors"><Save size={14} /></button>
-                                <button className="p-2 text-slate-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                                <button onClick={() => setZones(zones.filter((z) => z.id !== zone.id))} className="p-2 text-slate-500 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
                             </div>
                         </div>
                     ))}
                     
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-mono text-slate-500 uppercase block">Draw Active Zone</label>
-                        <div className="relative aspect-video bg-black rounded-xl border border-white/10 overflow-hidden cursor-crosshair">
-                            <canvas 
+                    {isDrawingMode && (
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-end">
+                                <label className="text-[10px] font-mono text-slate-500 uppercase block">Draw Active Zone</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Zone Name"
+                                    value={newZoneName}
+                                    onChange={(e) => setNewZoneName(e.target.value)}
+                                    className="bg-black/50 border border-white/10 rounded px-2 py-1 text-xs text-white"
+                                />
+                            </div>
+                            <div className="relative aspect-video bg-black rounded-xl border border-white/10 overflow-hidden cursor-crosshair">
+                                <canvas 
                                 id="zone-canvas"
                                 width={640} 
                                 height={360} 
@@ -154,7 +173,10 @@ export default function Settings() {
                                     onClick={() => {
                                         const pts = window.__drawingPoints || [];
                                         if (pts.length < 3) return;
-                                        setZones([...zones, { id: `z-${Date.now()}`, name: `Zone ${zones.length + 1}`, polygon: pts, active: true }]);
+                                        const name = newZoneName.trim() || `Zone ${zones.length + 1}`;
+                                        setZones([...zones, { id: `z-${Date.now()}`, name: name, polygon: pts, active: true }]);
+                                        setNewZoneName('');
+                                        setIsDrawingMode(false);
                                         window.__drawingPoints = [];
                                         const canvas = document.getElementById('zone-canvas');
                                         const ctx = canvas.getContext('2d');
@@ -178,6 +200,7 @@ export default function Settings() {
                             </div>
                         </div>
                     </div>
+                    )}
                 </div>
 
                 <div className="mt-4 p-4 bg-teal-500/10 border border-teal-500/20 rounded-xl">
