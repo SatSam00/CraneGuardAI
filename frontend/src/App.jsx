@@ -12,7 +12,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'live': return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
-      case 'dashboard': return <Dashboard onZoneSelect={(z) => { setSelectedZone(z); setActiveTab('live'); }} />;
+      case 'dashboard': return <Dashboard selectedZone={selectedZone} onZoneSelect={(z) => setSelectedZone(z)} />;
       case 'heatmap': return <Heatmap selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
       case 'settings': return <Settings />;
       default: return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;

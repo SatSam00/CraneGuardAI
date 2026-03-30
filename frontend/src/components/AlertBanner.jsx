@@ -33,15 +33,15 @@ export const AlertBanner = ({ alerts, image, onDismiss }) => {
               </h4>
             </div>
             
-            <p className="text-sm font-mono text-red-100 uppercase tracking-widest leading-relaxed">
+            <p className="text-sm font-mono text-white font-bold bg-black/20 p-2 border border-white/10 rounded uppercase">
                {alerts[0]}
             </p>
             
             <div className="mt-2 flex items-center gap-4">
-               <div className="px-3 py-1 bg-white/10 rounded-full text-[10px] font-mono font-bold tracking-tighter">
-                  ACTION REQUIRED IMMEDIATELY
+               <div className="px-3 py-1 bg-red-800 border border-white/20 rounded-full text-[10px] font-mono font-bold tracking-tighter">
+                  🔴 MACHINE STOPPED 🚨
                </div>
-               <span className="text-[10px] font-mono text-white/50 animate-pulse">SYSTEM AUTO-LOCKED</span>
+               <span className="text-[10px] font-mono text-white/50 animate-pulse uppercase tracking-[0.2em]">System Auto-Locked</span>
             </div>
           </div>
 

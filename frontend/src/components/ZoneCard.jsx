@@ -29,12 +29,21 @@ export const ZoneCard = ({ name, workerCount, craneActive, danger, machineActive
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-white/5 p-2 rounded flex items-center gap-2">
-          <User size={14} className={workerCount > 0 ? 'text-teal-400' : 'text-slate-600'} />
-          <span className="text-xs font-mono">{workerCount} WORKERS</span>
+          {/* Highlight workers based on risk tier: Red (Danger), Amber (Warning), Slate (Nominal) */}
+          <User size={14} className={
+            danger ? 'text-red-500 animate-pulse' : 
+            workerCount > 0 ? 'text-amber-500 animate-pulse' : 'text-slate-600'
+          } />
+          <span className={
+            danger ? 'text-xs font-mono text-red-500 font-bold' : 
+            workerCount > 0 ? 'text-xs font-mono text-amber-500' : 'text-xs font-mono text-slate-500'
+          }>
+            {workerCount} WORKERS
+          </span>
         </div>
         <div className="bg-white/5 p-2 rounded flex items-center gap-2">
-          <Activity size={14} className={craneActive ? 'text-amber-400' : 'text-slate-600'} />
-          <span className="text-xs font-mono">{craneActive ? 'CRANE ACTIVE' : 'CRANE IDLE'}</span>
+          <Activity size={14} className={craneActive ? 'text-teal-400' : 'text-slate-600'} />
+          <span className="text-xs font-mono text-slate-400">{craneActive ? 'CRANE ACTIVE' : 'CRANE IDLE'}</span>
         </div>
       </div>
 

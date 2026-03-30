@@ -1,11 +1,18 @@
 import os
 import httpx
 import time
+import cv2
+import asyncio
+import json
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Thread pool for non-blocking I/O operations
+executor = ThreadPoolExecutor(max_workers=2)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -39,15 +46,49 @@ class AlertEngine:
         self.cooldown_period = 5 # Reduced to 5s for better real-time feedback
         self.last_alerts = {} # {zone_id: timestamp}
         self.mock_incidents = [] # Local cache for offline mode
+        
+        # Create local snapshots directory
+        self.snapshots_dir = "snapshots"
+        os.makedirs(self.snapshots_dir, exist_ok=True)
+        self.zones_file = "zones.local.json"
 
-    async def upload_snapshot(self, frame, incident_id):
-        """Uploads a frame to Supabase Storage and returns the public URL."""
+    def _read_local_zones(self):
+        if not os.path.exists(self.zones_file):
+            return None
+        try:
+            with open(self.zones_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else None
+        except Exception as e:
+            print(f"Local zone read failed: {e}")
+            return None
+
+    def _write_local_zones(self, zones):
+        try:
+            with open(self.zones_file, "w", encoding="utf-8") as f:
+                json.dump(zones, f)
+        except Exception as e:
+            print(f"Local zone write failed: {e}")
+
+    def _save_frame_locally(self, frame, incident_id):
+        """Synchronous function to save frame to disk - runs in thread pool."""
+        try:
+            local_path = os.path.join(self.snapshots_dir, f"{incident_id}.jpg")
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            with open(local_path, 'wb') as f:
+                f.write(buffer.tobytes())
+            print(f"✓ Snapshot saved locally: {local_path}")
+            return local_path
+        except Exception as e:
+            print(f"Failed to save snapshot locally: {e}")
+            return None
+
+    def _upload_to_supabase(self, frame, incident_id, local_path):
+        """Synchronous function to upload to Supabase - runs in thread pool."""
         if not supabase:
             return None
             
         try:
-            import cv2
-            
             # Encode frame to JPEG
             _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             
@@ -63,9 +104,39 @@ class AlertEngine:
             
             # Get public URL
             url = supabase.storage.from_("incidents").get_public_url(file_path)
+            print(f"✓ Snapshot uploaded to Supabase: {url}")
             return url
         except Exception as e:
-            print(f"Upload failed: {e}")
+            print(f"Supabase upload failed: {e}")
+            return None
+
+    async def save_snapshot(self, frame, incident_id):
+        """Non-blocking snapshot save - saves locally immediately, uploads to Supabase in background."""
+        try:
+            # IMMEDIATELY save to local disk in thread pool (non-blocking)
+            loop = asyncio.get_event_loop()
+            local_path = await loop.run_in_executor(
+                executor,
+                self._save_frame_locally,
+                frame,
+                incident_id
+            )
+            
+            # BACKGROUND: Upload to Supabase WITHOUT blocking camera loop
+            if supabase:
+                asyncio.create_task(
+                    loop.run_in_executor(
+                        executor,
+                        self._upload_to_supabase,
+                        frame,
+                        incident_id,
+                        local_path
+                    )
+                )
+            
+            return local_path
+        except Exception as e:
+            print(f"Snapshot save error: {e}")
             return None
 
     async def save_incident(self, zone_id, zone_name, type="WORKER_IN_DANGER", severity="CRITICAL", frame=None):
@@ -83,9 +154,10 @@ class AlertEngine:
         import uuid
         incident_uuid = str(uuid.uuid4())
         
-        frame_url = None
+        frame_path = None
         if frame is not None:
-            frame_url = await self.upload_snapshot(frame, incident_uuid)
+            # Non-blocking snapshot save - returns immediately with local path
+            frame_path = await self.save_snapshot(frame, incident_uuid)
         
         data = {
             "id": incident_uuid,
@@ -95,7 +167,7 @@ class AlertEngine:
             "severity": severity,
             "timestamp": timestamp,
             "acknowledged": False,
-            "frame_url": frame_url
+            "frame_url": frame_path
         }
         
         # Store locally regardless of Supabase state for snappier real-time response
@@ -110,7 +182,7 @@ class AlertEngine:
                 print(f"Supabase save failed: {e}")
         
         # Enhanced Telegram message with Image if available
-        await self.send_telegram_alert(zone_name, timestamp, frame_url)
+        await self.send_telegram_alert(zone_name, timestamp, frame_path)
 
     async def send_telegram_alert(self, zone_name, timestamp, frame_url=None):
         if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -197,11 +269,15 @@ class AlertEngine:
                     "safety": max(0, 100 - (h_count * 10))
                 })
 
+            # Get actual monitored zones count
+            zones_res = await self.get_zones()
+            zone_count = len(zones_res) if zones_res else 0
+
             return {
                 "today_violations": count,
                 "safety_score": score,
                 "avg_reaction_time": 1.2,
-                "monitored_zones": 4, 
+                "monitored_zones": zone_count, 
                 "distribution": distribution,
                 "trend": trend if trend else [{"time": '08:00', "violations": 0, "safety": 100}]
             }
@@ -211,11 +287,38 @@ class AlertEngine:
 
     async def save_zone(self, zone_data):
         if not supabase:
+            local_zones = self._read_local_zones() or []
+            zone_map = {z.get("id"): z for z in local_zones if isinstance(z, dict) and z.get("id")}
+            zone_map[zone_data.get("id")] = zone_data
+            self._write_local_zones(list(zone_map.values()))
             return
         supabase.table("zones").upsert(zone_data).execute()
 
+    async def replace_zones(self, zones):
+        if not isinstance(zones, list):
+            return
+
+        if not supabase:
+            self._write_local_zones(zones)
+            return
+
+        incoming_ids = [z.get("id") for z in zones if isinstance(z, dict) and z.get("id")]
+        existing_res = supabase.table("zones").select("id").execute()
+        existing_ids = [row.get("id") for row in (existing_res.data or []) if row.get("id")]
+
+        # Remove rows no longer present in client payload.
+        for zone_id in existing_ids:
+            if zone_id not in incoming_ids:
+                supabase.table("zones").delete().eq("id", zone_id).execute()
+
+        if zones:
+            supabase.table("zones").upsert(zones).execute()
+
     async def get_zones(self):
         if not supabase:
+            local_zones = self._read_local_zones()
+            if local_zones is not None:
+                return local_zones
             # Default fallback for POC
             return [
                 {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},

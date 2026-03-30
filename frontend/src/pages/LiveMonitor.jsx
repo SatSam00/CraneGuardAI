@@ -9,11 +9,24 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
   const { data, status } = useWebSocketData();
   const canvasRef = useRef(null);
 
+  const drawContained = (ctx, img, canvas) => {
+    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+    const dw = img.width * scale;
+    const dh = img.height * scale;
+    const dx = (canvas.width - dw) / 2;
+    const dy = (canvas.height - dh) / 2;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, dx, dy, dw, dh);
+  };
+
   const [machineStates, setMachineStates] = React.useState({});
   const [enabledZones, setEnabledZones] = React.useState({ "A1": true, "A2": true });
   const focusZone = selectedZone;
   const setFocusZone = onZoneSelect;
-  const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')); // Warning beep sound
+  const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3')); // Critical Industrial Alarm
 
   const zoneStatus = data?.zone_status || {};
   const alerts = data?.alerts || [];
@@ -37,7 +50,8 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
               const maxX = Math.max(...poly.map(p => p[0]));
               const maxY = Math.max(...poly.map(p => p[1]));
               
-              const padding = 80;
+              // Larger padding makes focused mode less aggressively zoomed.
+              const padding = 180;
               const sx = Math.max(0, minX - padding);
               const sy = Math.max(0, minY - padding);
               const sw = Math.min(img.width - sx, (maxX - minX) + padding * 2);
@@ -54,7 +68,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
               return;
             }
           }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          drawContained(ctx, img, canvas);
         };
         img.src = `data:image/jpeg;base64,${data.frame}`;
     }
@@ -208,24 +222,28 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
             />
             
             <div className="absolute bottom-4 left-4 flex gap-2">
-               {Object.entries(zoneStatus).map(([id, status]) => {
-                  const isEnabled = enabledZones[id] !== false;
-                  const isSelected = focusZone === id || status.name === focusZone || `Zone ${id}` === focusZone;
-                  return (
-                     <button 
-                        key={id}
-                        onClick={() => setFocusZone(isSelected ? null : id)}
-                        className={clsx(
-                           "px-3 py-1 rounded-full text-[10px] font-mono border transition-all flex items-center gap-2",
-                           !isEnabled ? "bg-slate-900/60 border-slate-700 text-slate-500 opacity-60" :
-                           isSelected ? "bg-teal-500/20 border-teal-500 text-teal-400" : "bg-black/60 border-white/10 text-slate-500 backdrop-blur-md"
-                        )}
-                      >
-                         <div className={`w-1 h-1 rounded-full ${!isEnabled ? 'bg-slate-700' : status.danger ? 'bg-red-500 animate-pulse' : 'bg-teal-500/40'}`} />
-                         {status.name} {!isEnabled && '[OFF]'}
-                     </button>
-                  );
-               })}
+                {Object.entries(zoneStatus).map(([id, status]) => {
+                   const isEnabled = enabledZones[id] !== false;
+                   const isSelected = focusZone === id || status.name === focusZone || `Zone ${id}` === focusZone;
+                   const isDanger = status.danger;
+                   const isWarning = status.worker_count > 0 && !isDanger;
+                   return (
+                      <button 
+                         key={id}
+                         onClick={() => setFocusZone(isSelected ? null : id)}
+                         className={clsx(
+                            "px-3 py-1 rounded-full text-[10px] font-mono border transition-all flex items-center gap-2",
+                            !isEnabled ? "bg-slate-900/60 border-slate-700 text-slate-500 opacity-60" :
+                            isDanger ? "bg-red-500/20 border-red-500 text-red-500 animate-pulse" :
+                            isWarning ? "bg-amber-500/20 border-amber-500 text-amber-500 animate-pulse" :
+                            isSelected ? "bg-teal-500/20 border-teal-500 text-teal-400" : "bg-black/60 border-white/10 text-slate-500 backdrop-blur-md"
+                         )}
+                       >
+                          <div className={`w-1 h-1 rounded-full ${!isEnabled ? 'bg-slate-700' : isDanger ? 'bg-red-500 animate-pulse' : isWarning ? 'bg-amber-500 animate-pulse' : 'bg-slate-800'}`} />
+                          {status.name} {!isEnabled && '[OFF]'}
+                      </button>
+                   );
+                })}
             </div>
 
             {alerts.length > 0 && (

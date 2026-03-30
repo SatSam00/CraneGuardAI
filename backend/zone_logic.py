@@ -50,15 +50,26 @@ def check_zones(detections, zones):
         
         # 1. Only process detections if zone is active
         if is_active:
+            poly_np = np.array(poly, dtype=np.int32)
             for det in detections:
-                if is_box_in_zone(det['bbox'], poly):
+                # Primary check: BBox or Center
+                in_zone = is_box_in_zone(det['bbox'], poly)
+                
+                # Secondary check: Human Body Parts (Hands, Arms)
+                parts_in_zone = False
+                for part_name, pt in det.get('parts', {}).items():
+                    if cv2.pointPolygonTest(poly_np, tuple(pt), False) >= 0:
+                        parts_in_zone = True
+                        break
+                
+                if in_zone or parts_in_zone:
                     if det['class'] == 'person':
                         workers_in_zone.append(det)
                     elif det['class'] in ['truck', 'forklift', 'bus', 'train']:
                         machines_in_zone.append(det)
                     
-                    # Detect any movement/shaking in zone
-                    if det.get('movement', 0) > 1.2: # High sensitivity for shaking
+                    # Detect any movement/shaking in zone, or specific hand movement
+                    if det.get('movement', 0) > 1.2:
                         movement_in_zone = True
             
             # 2. Check for Proximity/Overlap (only for active zones)

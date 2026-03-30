@@ -6,6 +6,8 @@ export const WebSocketProvider = ({ children }) => {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState('connecting');
   const ws = useRef(null);
+  const latestPayloadRef = useRef(null);
+  const rafRef = useRef(null);
   const host = window.location.hostname || '127.0.0.1';
   const url = `ws://${host}:8200/ws/feed`;
 
@@ -20,7 +22,12 @@ export const WebSocketProvider = ({ children }) => {
 
       ws.current.onmessage = (event) => {
         const payload = JSON.parse(event.data);
-        setData(payload);
+        latestPayloadRef.current = payload;
+        if (rafRef.current !== null) return;
+        rafRef.current = window.requestAnimationFrame(() => {
+          setData(latestPayloadRef.current);
+          rafRef.current = null;
+        });
       };
 
       ws.current.onclose = () => {
@@ -40,6 +47,10 @@ export const WebSocketProvider = ({ children }) => {
     connect();
 
     return () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       if (ws.current) {
         ws.current.onclose = null; // Prevent reconnect on unmount
         ws.current.close();

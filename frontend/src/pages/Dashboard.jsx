@@ -7,7 +7,7 @@ import { Shield, AlertCircle, ScanEye, Timer, CheckCircle, Loader2 } from 'lucid
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { clsx } from 'clsx';
 
-export default function Dashboard({ onZoneSelect }) {
+export default function Dashboard({ selectedZone, onZoneSelect }) {
   const { data: wsData, status } = useWebSocketData();
   const [incidents, setIncidents] = useState([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState([]);
@@ -15,34 +15,74 @@ export default function Dashboard({ onZoneSelect }) {
   const [stats, setStats] = useState({
       violations: 0,
       score: 100,
-      zones: 4,
+      zones: 0,
       reaction: 1.2,
       distribution: {},
       trend: []
   });
 
-  const displayIncidents = incidents.map(inc => ({
+  const displayIncidents = incidents
+    .filter(inc => !selectedZone || inc.zone_name === selectedZone || inc.zone_id === selectedZone || `Zone ${inc.zone_id}` === selectedZone)
+    .map(inc => ({
       ...inc,
       acknowledged: inc.acknowledged || acknowledgedIds.includes(inc.id)
-  }));
+    }));
 
   const latestUnacknowledged = displayIncidents.find(inc => !inc.acknowledged && !dismissedAlertIds.includes(inc.id));
-  // Sync with WebSocket data
+
+  // Recalculate local stats based on selection
   useEffect(() => {
     if (wsData?.stats) {
-      setStats({
-          violations: wsData.stats.today_violations,
-          score: wsData.stats.safety_score,
-          zones: wsData.stats.monitored_zones || 4,
+      if (selectedZone) {
+        // Focused Stats
+        const zoneViolations = wsData.stats.distribution[selectedZone] || 0;
+        
+        // Calculate trend from filtered incidents for accuracy
+        const trendMap = {};
+        // Initialize 12h trend buckets (matching backend 2h buckets)
+        const now = new Date();
+        for (let i = 12; i >= 0; i -= 2) {
+            const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+            d.setMinutes(0, 0, 0);
+            const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            trendMap[label] = { time: label, violations: 0, safety: 100 };
+        }
+
+        displayIncidents.forEach(inc => {
+            const d = new Date(inc.timestamp);
+            d.setMinutes(0, 0, 0);
+            const label = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            if (trendMap[label]) {
+                trendMap[label].violations += 1;
+                trendMap[label].safety = Math.max(0, 100 - (trendMap[label].violations * 15));
+            }
+        });
+
+        setStats({
+          violations: zoneViolations,
+          score: Math.max(0, 100 - (zoneViolations * 10)),
+          zones: 1,
           reaction: wsData.stats.avg_reaction_time,
-          distribution: wsData.stats.distribution || {},
-          trend: wsData.stats.trend || []
-      });
+          distribution: { [selectedZone]: zoneViolations },
+          trend: Object.values(trendMap).sort((a, b) => a.time.localeCompare(b.time))
+        });
+      } else {
+        // Global Stats
+        setStats({
+            violations: wsData.stats.today_violations,
+            score: wsData.stats.safety_score,
+            zones: wsData.stats.monitored_zones || 0,
+            reaction: wsData.stats.avg_reaction_time,
+            distribution: wsData.stats.distribution || {},
+            trend: wsData.stats.trend || []
+        });
+      }
     }
+    
     if (wsData?.incidents) {
       setIncidents(wsData.incidents);
     }
-  }, [wsData]);
+  }, [wsData, selectedZone]);
 
   if (status !== 'connected' && !wsData) {
     return (
@@ -75,9 +115,20 @@ export default function Dashboard({ onZoneSelect }) {
       />
       
       <div className="flex justify-between items-center">
-        <div>
-            <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">ANALYTICS DASHBOARD</h2>
-            <p className="text-[10px] font-mono text-slate-500 mt-2 uppercase tracking-[0.3em]">Real-Time Safety Intelligence Matrix</p>
+        <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-4">
+                <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">ANALYTICS DASHBOARD</h2>
+                {selectedZone && (
+                  <div 
+                    onClick={() => onZoneSelect(null)}
+                    className="bg-teal-500/20 border border-teal-500/50 px-3 py-1 rounded text-[10px] font-mono text-teal-400 font-bold animate-pulse cursor-pointer hover:bg-teal-500/30 transition-colors flex items-center gap-2"
+                  >
+                    SYNCED: {selectedZone}
+                    <span className="text-[8px] opacity-60">(CLEAR)</span>
+                  </div>
+                )}
+            </div>
+            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em]">{selectedZone ? `FILTERED INTELLIGENCE FOR ${selectedZone}` : 'Real-Time Safety Intelligence Matrix'}</p>
         </div>
         <div className="bg-card/50 backdrop-blur-xl px-4 py-2 border border-white/5 rounded-lg flex items-center gap-4 shadow-2xl">
              <div className="flex flex-col items-end">
@@ -94,16 +145,16 @@ export default function Dashboard({ onZoneSelect }) {
       </div>
 
       <div className="grid grid-cols-4 gap-6">
-        <StatCard label="TODAY'S VIOLATIONS" value={stats.violations} color="amber" icon={AlertCircle} subtext="REAL-TIME EVENT STREAM" />
+        <StatCard label="TODAY'S VIOLATIONS" value={stats.violations} color="amber" icon={AlertCircle} subtext={selectedZone ? "ZONE SPECIFIC COUNT" : "REAL-TIME EVENT STREAM"} />
         <StatCard label="SAFETY SCORE" value={`${stats.score}%`} color={stats.score > 80 ? 'teal' : 'red'} icon={CheckCircle} subtext="LIVE RELIABILITY RATING" />
-        <StatCard label="MONITORED ZONES" value={stats.zones} color="slate" icon={ScanEye} subtext="AUTOMATED COVERAGE" />
+        <StatCard label={selectedZone ? "ACTIVE SELECTION" : "MONITORED ZONES"} value={stats.zones} color="slate" icon={ScanEye} subtext={selectedZone ? "FOCUSED VIEW" : "AUTOMATED COVERAGE"} />
         <StatCard label="AVG REACTION TIME" value={`${stats.reaction}s`} color="teal" icon={Timer} subtext="SYSTEM TO ALERT LATENCY" />
       </div>
 
       <div className="grid grid-cols-3 gap-8">
         <div className="col-span-2 bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 h-[450px] flex flex-col gap-6 shadow-inner">
             <div className="flex justify-between items-center">
-                <h3 className="font-display font-bold text-xl tracking-widest text-white">SAFETY PERFORMANCE TRENDS</h3>
+                <h3 className="font-display font-bold text-xl tracking-widest text-white uppercase">{selectedZone ? `${selectedZone} TRENDS` : 'SAFETY PERFORMANCE TRENDS'}</h3>
                 <div className="flex gap-2">
                    <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
                       <div className="w-2 h-2 rounded-full bg-teal-500" /> Operational Safety
@@ -154,7 +205,7 @@ export default function Dashboard({ onZoneSelect }) {
         </div>
         
         <div className="bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 h-[450px] flex flex-col gap-8 shadow-inner">
-             <h3 className="font-display font-bold text-xl tracking-widest text-white text-center">ZONE DISTRIBUTION</h3>
+             <h3 className="font-display font-bold text-xl tracking-widest text-white text-center uppercase">{selectedZone ? 'ZONE CONCENTRATION' : 'ZONE DISTRIBUTION'}</h3>
              <div className="flex-1 flex flex-col items-center justify-center relative">
                  <div className="text-center z-10">
                     <div className="text-7xl font-display font-bold text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.2)]">{stats.violations}</div>
@@ -166,20 +217,29 @@ export default function Dashboard({ onZoneSelect }) {
              </div>
              
              <div className="space-y-6">
-                  {Object.entries(stats.distribution).length > 0 ? Object.entries(stats.distribution).map(([label, val]) => (
-                      <div key={label} className="group cursor-pointer" onClick={() => onZoneSelect(label)}>
+                  {Object.entries(stats.distribution).length > 0 ? Object.entries(stats.distribution).map(([label, val]) => {
+                      const isSelected = selectedZone === label;
+                      return (
+                      <div key={label} className={clsx(
+                          "group cursor-pointer p-2 rounded-lg transition-all duration-300",
+                          isSelected ? "bg-teal-500/10 border border-teal-500/30 scale-[1.02]" : "hover:bg-white/5 border border-transparent"
+                      )} onClick={() => onZoneSelect(isSelected ? null : label)}>
                           <div className="flex justify-between items-end text-[11px] font-mono mb-2">
-                              <span className="text-slate-400 group-hover:text-teal-400 transition-colors uppercase tracking-widest leading-none">{label}</span>
-                              <span className="text-white font-bold leading-none">{val} <span className="text-[8px] text-slate-600 ml-1">UNITS</span></span>
+                              <span className={clsx(
+                                  "transition-colors uppercase tracking-widest leading-none",
+                                  isSelected ? "text-teal-400" : "text-slate-400 group-hover:text-teal-400"
+                              )}>{label}</span>
+                              <span className="text-white font-bold leading-none">{val} <span className="text-[8px] text-slate-600 ml-1">ALERTS</span></span>
                           </div>
                           <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden p-[1px]">
                               <div 
                                 className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(20,184,166,0.5)] transition-all duration-1000 ease-out" 
-                                style={{ width: `${Math.min(100, (val / (stats.violations || 1)) * 100)}%` }} 
+                                style={{ width: `${Math.min(100, (val / (wsData.stats.today_violations || 1)) * 100)}%` }} 
                               />
                           </div>
                       </div>
-                  )) : (
+                      );
+                  }) : (
                     <div className="flex flex-col items-center justify-center py-10 border border-dashed border-white/5 rounded-2xl bg-black/20">
                       <Shield className="text-slate-800 mb-2" size={32} />
                       <span className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">Secure State: No Violations</span>

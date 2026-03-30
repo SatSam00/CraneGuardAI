@@ -4,9 +4,11 @@ import json
 import asyncio
 import os
 import time
+import platform
 import numpy as np
-from datetime import datetime
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import Any
+from datetime import datetime, timezone
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body
 from fastapi.middleware.cors import CORSMiddleware
 from detector import CraneDetector
 from zone_logic import check_zones, is_box_in_zone
@@ -17,13 +19,26 @@ load_dotenv()
 
 from contextlib import asynccontextmanager
 
+DEFAULT_ZONES = [
+    {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},
+    {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True}
+]
+
 # State management - machine active per zone
-machine_states = {"A1": False, "A2": False}
-last_movement_time = {"A1": 0, "A2": 0}
+machine_states = {zone["id"]: False for zone in DEFAULT_ZONES}
+last_movement_time = {zone["id"]: 0 for zone in DEFAULT_ZONES}
 
 # Real-time analytics cache
 cached_stats = {"today_violations": 0, "safety_score": 100, "avg_reaction_time": 0, "distribution": {}, "trend": []}
 cached_incidents = []
+
+
+def sync_zone_runtime_state(zones):
+    """Keep machine state dictionaries aligned with current zone IDs."""
+    global machine_states, last_movement_time
+    zone_ids = {z.get("id") for z in zones if isinstance(z, dict) and z.get("id")}
+    machine_states = {zid: machine_states.get(zid, False) for zid in zone_ids}
+    last_movement_time = {zid: last_movement_time.get(zid, 0) for zid in zone_ids}
 
 async def update_analytics_loop():
     """Background loop to update analytics from DB every 5 seconds."""
@@ -64,9 +79,10 @@ async def lifespan(app: FastAPI):
     # Attempt to load zones from Supabase
     try:
         zones = await alert_engine.get_zones()
-        if zones: 
+        if zones is not None:
             global current_zones
             current_zones = zones
+            sync_zone_runtime_state(current_zones)
     except Exception as e:
         print(f"Error loading zones: {e}")
     yield
@@ -81,16 +97,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-detector = CraneDetector()
+detector = CraneDetector(os.getenv("DETECTOR_MODEL", "yolov8s.pt"))
 alert_engine = AlertEngine()
 camera_source = os.getenv("CAMERA_SOURCE", 0)
+camera_stream_lock = asyncio.Lock()
+DETECTION_STRIDE = max(1, int(os.getenv("DETECTION_STRIDE", "2")))
+STREAM_TARGET_FPS = max(8, int(os.getenv("STREAM_TARGET_FPS", "16")))
+STREAM_JPEG_QUALITY = max(45, min(90, int(os.getenv("STREAM_JPEG_QUALITY", "68"))))
 
-# Zones config (fallback to mock if DB empty)
-# Typically loaded from DB on startup and refreshed
-current_zones = [
-    {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},
-    {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True}
-]
+# Zones config (fallback to defaults if no DB/local data)
+current_zones = list(DEFAULT_ZONES)
+
+@app.get("/")
+async def health_check():
+    return {"status": "ok", "service": "CraneAI Backend", "websocket": "/ws/feed"}
 
 @app.get("/incidents")
 async def get_incidents():
@@ -124,13 +144,18 @@ async def get_machine_state(zone_id: str = None):
     return machine_states
 
 @app.post("/zones")
-async def update_zones(zones: list):
+async def update_zones(payload: Any = Body(...)):
     global current_zones, machine_states
+    if isinstance(payload, dict) and isinstance(payload.get("zones"), list):
+        zones = payload.get("zones")
+    elif isinstance(payload, list):
+        zones = payload
+    else:
+        return {"status": "error", "message": "Invalid zones payload"}
+
     current_zones = zones
-    for zone in zones:
-        await alert_engine.save_zone(zone)
-        if zone['id'] not in machine_states:
-            machine_states[zone['id']] = False
+    sync_zone_runtime_state(current_zones)
+    await alert_engine.replace_zones(zones)
     return {"status": "Zones updated"}
 
 @app.post("/zones/toggle")
@@ -142,6 +167,7 @@ async def toggle_zone(data: dict):
     for zone in current_zones:
         if zone['id'] == zone_id:
             zone['active'] = enabled
+            await alert_engine.save_zone(zone)
             break
             
     return {"status": "success", "zones": current_zones}
@@ -155,21 +181,32 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     cap = None
+    lock_acquired = False
     try:
+        # Only one active camera stream at a time; avoids camera backend contention on Windows.
+        if camera_stream_lock.locked():
+            await websocket.send_json({"error": "Camera stream is already in use by another client. Please close other tabs and retry."})
+            return
+
+        await camera_stream_lock.acquire()
+        lock_acquired = True
+
         src = camera_source
         if str(src).isdigit():
             src = int(src)
             
         print(f"Attempting to open camera source: {src}")
         
-        # Try different backends for Windows if it's an index
-        backends = [cv2.CAP_ANY, cv2.CAP_DSHOW, cv2.CAP_MSMF]
+        # Prefer DSHOW first on Windows because MSMF can fail under reconnect churn.
+        is_windows = platform.system().lower().startswith("win")
+        backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if is_windows else [cv2.CAP_ANY]
         
         def try_open(source, backend_list):
             for b in backend_list:
                 c = cv2.VideoCapture(source, b) if isinstance(source, int) else cv2.VideoCapture(source)
                 if c.isOpened():
                     return c
+                c.release()
             return None
 
         cap = try_open(src, backends)
@@ -190,19 +227,35 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"error": error_msg})
             return
 
-        # Optimize for performance: set resolution
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # Better input detail improves person detection quality in wider shots.
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_ZOOM, 0)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Minimize latency by keeping only the latest frame
 
+        read_failures = 0
+        frame_index = 0
+        cached_detections = []
+
         while True:
+            loop_start = time.perf_counter()
             success, frame = cap.read()
             if not success:
-                break
+                read_failures += 1
+                if read_failures > 20:
+                    print("Camera read failed repeatedly; closing stream")
+                    break
+                await asyncio.sleep(0.05)
+                continue
+
+            read_failures = 0
+            frame_index += 1
                 
             # Run Inference
-            detections = detector.detect_and_track(frame)
+            if frame_index % DETECTION_STRIDE == 0 or not cached_detections:
+                cached_detections = detector.detect_and_track(frame)
+            detections = cached_detections
             
             # Check Zones (All zones, logic handles internal skipping)
             zone_results = check_zones(detections, current_zones)
@@ -293,7 +346,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
             # Encode and Send
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, STREAM_JPEG_QUALITY])
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
             
             payload = {
@@ -304,11 +357,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 "machine_states": machine_states,
                 "stats": cached_stats,
                 "incidents": cached_incidents,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
             await websocket.send_json(payload)
-            await asyncio.sleep(0.01) 
+            elapsed = time.perf_counter() - loop_start
+            target_frame_time = 1.0 / STREAM_TARGET_FPS
+            await asyncio.sleep(max(0, target_frame_time - elapsed))
 
     except WebSocketDisconnect:
         print("Client disconnected")
@@ -317,6 +372,8 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if cap:
             cap.release()
+        if lock_acquired and camera_stream_lock.locked():
+            camera_stream_lock.release()
 
 if __name__ == "__main__":
     import uvicorn

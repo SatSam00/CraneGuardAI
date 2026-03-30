@@ -20,36 +20,28 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
     }
   }, [wsData]);
 
-  // Define a fixed grid representing the floor plan
-  // Rows: A-E, Cols: 1-7
-  const rows = ['A', 'B', 'C', 'D', 'E'];
-  const cols = [1, 2, 3, 4, 5, 6, 7];
-
-  const getZoneStats = (row, col) => {
-    const id = `${row}${col}`;
-    // Check for exact match or partial match in distribution keys
-    const count = stats.distribution[id] || stats.distribution[`Zone ${id}`] || 0;
+  const getZoneDisplayData = (zoneId, zoneInfo) => {
+    const zoneName = zoneInfo.name || zoneId;
+    const count = stats.distribution[zoneName] || stats.distribution[zoneId] || 0;
     
-    // Live status check
-    const liveId = Object.keys(zoneStatus).find(k => k === id || k === `Zone ${id}` || zoneStatus[k].name === id || zoneStatus[k].name === `Zone ${id}`);
-    const liveData = liveId ? zoneStatus[liveId] : null;
-
-    let risk = 'low';
-    if (count > 10 || liveData?.danger) risk = 'high';
-    else if (count > 3 || liveData?.worker_count > 0) risk = 'medium';
+    // Safety Intelligence Tiering:
+    let risk = 'low'; // Green (Safe)
+    if (zoneInfo.danger || count > 15) risk = 'high'; // Red (Danger)
+    else if (zoneInfo.worker_count > 0 || count > 5) risk = 'medium'; // Yellow (Warning)
     
-    return { count, risk, liveData };
+    return { name: zoneName, count, risk, liveData: zoneInfo };
   };
 
   const getRiskStyles = (risk, liveData) => {
+    // 🔴 RED ZONE: Danger (Machine + Human)
     if (liveData?.danger) return 'bg-red-500/60 border-red-400 shadow-[0_0_30px_rgba(239,68,68,0.4)] animate-pulse';
-    if (liveData?.worker_count > 0) return 'bg-amber-500/40 border-amber-400 animate-pulse';
+    
+    // 🟡 YELLOW ZONE: Warning (Worker presence near idle machine)
+    if (liveData?.worker_count > 0 || risk === 'medium') return 'bg-amber-500/40 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)] animate-pulse';
 
-    switch (risk) {
-      case 'high': return 'bg-red-500/40 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]';
-      case 'medium': return 'bg-amber-500/20 border-amber-500/30';
-      default: return 'bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/10';
-    }
+    // 🟢 GREEN ZONE: Safe (Nominal)
+    if (risk === 'high') return 'bg-red-500/40 border-red-500'; 
+    return 'bg-teal-500/5 border-teal-500/10 hover:bg-teal-500/15';
   };
 
   return (
@@ -91,9 +83,9 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                   <div className="flex flex-col gap-2">
                        <div className="text-[8px] font-mono text-slate-500 uppercase tracking-widest text-right">Risk Gradient</div>
                        <div className="flex gap-4">
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> CRITICAL / LIVE ALERT</div>
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> ELEVATED / LIVE PRESENCE</div>
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-teal-500/10 border border-teal-400 rounded-sm" /> NOMINAL</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> 🔴 RED: CRITICAL HAZARD (MACHINE ON + HUMAN)</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> 🟡 YELLOW: WARNING (IDLE MACHINE + HUMAN)</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-teal-500/10 border border-teal-400 rounded-sm" /> 🟢 GREEN: SAFE (NOMINAL)</div>
                        </div>
                   </div>
              </div>
@@ -111,60 +103,67 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
              <span className="font-mono text-xs uppercase tracking-widest">Compiling Spatial Data...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-7 gap-6 flex-1 max-h-[600px]">
-            {rows.map((r) => (
-                cols.map((c) => {
-                  const id = `${r}${c}`;
-                  const data = getZoneStats(r, c);
-                  const isSelected = selectedZone === id || selectedZone === `Zone ${id}`;
-                  
-                  return (
-                    <div 
-                      key={`${r}${c}`}
-                      onClick={() => onZoneSelect(isSelected ? null : `Zone ${id}`)}
-                      className={clsx(
-                        "group relative rounded-xl border transition-all duration-500 hover:scale-105 hover:z-20 cursor-pointer flex flex-col items-center justify-center overflow-hidden",
-                        getRiskStyles(data.risk, data.liveData),
-                        isSelected ? "ring-2 ring-teal-500 border-teal-500 scale-105 z-10" : "grayscale-[0.5]"
-                      )}
-                    >
-                        {/* Live Worker Indicator */}
-                        {data.liveData?.worker_count > 0 && (
-                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/40 px-1.5 py-0.5 rounded-full border border-white/10">
-                            <div className={clsx("w-1 h-1 rounded-full", data.liveData.danger ? "bg-red-500 animate-ping" : "bg-amber-500 animate-pulse")} />
-                            <span className="text-[6px] font-mono text-white/80">{data.liveData.worker_count} LIVE</span>
-                          </div>
-                        )}
-
-                        {/* Zone Identifier label */}
-                        <div className="absolute top-3 left-3 flex flex-col">
-                           <span className={clsx("text-[10px] font-mono font-bold tracking-tighter", isSelected ? "text-teal-400" : "text-white/40")}>{r}{c}</span>
-                           <div className={clsx("w-4 h-[1px] mt-1", isSelected ? "bg-teal-500/50" : "bg-white/10")} />
+          <div className="grid grid-cols-4 gap-6 flex-1 max-h-[600px] overflow-y-auto">
+            {Object.entries(zoneStatus).map(([id, info]) => {
+                const data = getZoneDisplayData(id, info);
+                const isSelected = selectedZone === id || selectedZone === data.name || selectedZone === `Zone ${id}`;
+                
+                return (
+                <div 
+                    key={id}
+                    onClick={() => onZoneSelect(isSelected ? null : data.name)}
+                    className={clsx(
+                    "group relative rounded-xl border transition-all duration-500 hover:scale-105 hover:z-20 cursor-pointer flex flex-col items-center justify-center overflow-hidden min-h-[160px]",
+                    getRiskStyles(data.risk, data.liveData),
+                    isSelected ? "ring-2 ring-teal-500 border-teal-500 scale-105 z-10" : "grayscale-[0.2]"
+                    )}
+                >
+                    {/* Live Worker Indicator / Tiered Badge */}
+                    {data.liveData?.worker_count > 0 && (
+                        <div className={clsx(
+                            "absolute top-2 right-2 flex flex-col items-end gap-1 px-2 py-1.5 rounded border shadow-lg backdrop-blur-md",
+                            data.liveData.danger ? "bg-red-950/60 border-red-500 ring-2 ring-red-500/20" : "bg-amber-950/40 border-amber-500/50"
+                        )}>
+                            <div className="flex items-center gap-1.5">
+                                <div className={clsx("w-1.5 h-1.5 rounded-full", data.liveData.danger ? "bg-red-500 animate-ping" : "bg-amber-500 animate-pulse")} />
+                                <span className={clsx("text-[7px] font-mono font-bold uppercase", data.liveData.danger ? "text-red-100" : "text-amber-100")}>
+                                    {data.liveData.danger ? "🔴 CRITICAL HAZARD" : "🟡 WARNING"}
+                                </span>
+                            </div>
+                            {data.liveData.danger && (
+                                <span className="text-[5px] font-mono font-bold text-red-300 uppercase tracking-tighter leading-none">MACHINE ON + HUMAN DETECTED</span>
+                            )}
                         </div>
+                    )}
 
-                        {/* Centered Violation Count */}
-                        <div className="flex flex-col items-center gap-1 transition-transform group-hover:scale-110">
-                           <span className={clsx("text-2xl font-display font-bold", data.count > 0 || isSelected ? "text-white" : "text-white/5")}>
-                              {data.count}
-                           </span>
-                           <span className="text-[7px] font-mono text-slate-600 uppercase tracking-widest">Risk Index</span>
-                        </div>
-
-                        {/* Interactive Overlay */}
-                        <div className="opacity-0 group-hover:opacity-100 absolute inset-0 bg-[#000000ed] backdrop-blur-md rounded-xl flex flex-col items-center justify-center p-4 text-center transition-all duration-300 border border-teal-500/20">
-                           <ArrowUpRight className="text-teal-500 absolute top-4 right-4" size={16} />
-                           <span className="text-[10px] font-mono text-teal-400 uppercase tracking-widest mb-1 font-bold">Zone Section {r}{c}</span>
-                           <div className="h-[1px] w-12 bg-teal-500/20 my-2" />
-                           <span className="text-xl font-display font-bold text-white mb-1">{data.count} EVENTS</span>
-                           {data.liveData?.worker_count > 0 && (
-                             <p className="text-[8px] font-mono text-amber-500 uppercase tracking-tighter mb-1">Worker Currently Active</p>
-                           )}
-                           <p className="text-[8px] font-mono text-slate-500 leading-tight">Spatial accumulation reflects historical safety infringements per 24h segment.</p>
-                        </div>
+                    {/* Zone Identifier label */}
+                    <div className="absolute top-3 left-3 flex flex-col">
+                        <span className={clsx("text-[10px] font-mono font-bold tracking-tighter uppercase", isSelected ? "text-teal-400" : "text-white/40")}>{data.name}</span>
+                        <div className={clsx("w-4 h-[1px] mt-1", isSelected ? "bg-teal-500/50" : "bg-white/10")} />
                     </div>
-                  );
-                })
-            ))}
+
+                    {/* Centered Violation Count */}
+                    <div className="flex flex-col items-center gap-1 transition-transform group-hover:scale-110">
+                        <span className={clsx("text-4xl font-display font-bold", data.count > 0 || isSelected ? "text-white" : "text-white/20")}>
+                            {data.count}
+                        </span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-[0.2em] font-bold">Alert Count</span>
+                    </div>
+
+                    {/* Interactive Overlay */}
+                    <div className="opacity-0 group-hover:opacity-100 absolute inset-0 bg-[#000000ed] backdrop-blur-md rounded-xl flex flex-col items-center justify-center p-4 text-center transition-all duration-300 border border-teal-500/20">
+                        <ArrowUpRight className="text-teal-500 absolute top-4 right-4" size={16} />
+                        <span className="text-[10px] font-mono text-teal-400 uppercase tracking-widest mb-1 font-bold">{data.name}</span>
+                        <div className="h-[1px] w-12 bg-teal-500/20 my-2" />
+                        <span className="text-2xl font-display font-bold text-white mb-1">{data.count} ALERTS</span>
+                        {data.liveData?.worker_count > 0 && (
+                            <p className="text-[8px] font-mono text-amber-500 uppercase tracking-tighter mb-1">Active Worker Present</p>
+                        )}
+                        <p className="text-[8px] font-mono text-slate-500 leading-tight">Total historical safety violations recorded for this specific zone.</p>
+                    </div>
+                </div>
+                );
+            })}
           </div>
         )}
 
