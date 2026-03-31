@@ -30,6 +30,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
 
   const zoneStatus = data?.zone_status || {};
   const alerts = data?.alerts || [];
+  const hasCriticalAlert = alerts.some((msg) => msg.startsWith('CRITICAL:'));
 
   useEffect(() => {
     if (data && data.frame && canvasRef.current) {
@@ -246,7 +247,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
                 })}
             </div>
 
-            {alerts.length > 0 && (
+            {hasCriticalAlert && (
                 <div className="absolute inset-0 border-4 border-red-500 pointer-events-none animate-pulse" />
             )}
           </div>

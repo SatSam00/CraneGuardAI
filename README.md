@@ -81,5 +81,8 @@ Distributed under the MIT License. See `LICENSE` for more information.
 cd craneai   
 PS D:\PERS PROJECTS\CraneGuard AI\craneai> cd .\frontend\                                             
 PS D:\PERS PROJECTS\CraneGuard AI\craneai\frontend> npm run dev   
->> 
+>> PS D:\PERS PROJECTS\CraneGuard AI\craneai> & "d:\PERS PROJECTS\CraneGuard AI\.venv\Scripts\Activate.ps1"
+(.venv) PS D:\PERS PROJECTS\CraneGuard AI\craneai> cd .\frontend\                                                                              
+(.venv) PS D:\PERS PROJECTS\CraneGuard AI\craneai\frontend> npm run dev
 
+ .\venv\Scripts\python main.py

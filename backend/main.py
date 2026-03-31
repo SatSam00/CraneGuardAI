@@ -27,6 +27,8 @@ DEFAULT_ZONES = [
 # State management - machine active per zone
 machine_states = {zone["id"]: False for zone in DEFAULT_ZONES}
 last_movement_time = {zone["id"]: 0 for zone in DEFAULT_ZONES}
+manual_machine_control = {zone["id"]: False for zone in DEFAULT_ZONES}
+danger_latch_time = {zone["id"]: 0 for zone in DEFAULT_ZONES}
 
 # Real-time analytics cache
 cached_stats = {"today_violations": 0, "safety_score": 100, "avg_reaction_time": 0, "distribution": {}, "trend": []}
@@ -35,10 +37,12 @@ cached_incidents = []
 
 def sync_zone_runtime_state(zones):
     """Keep machine state dictionaries aligned with current zone IDs."""
-    global machine_states, last_movement_time
+    global machine_states, last_movement_time, manual_machine_control, danger_latch_time
     zone_ids = {z.get("id") for z in zones if isinstance(z, dict) and z.get("id")}
     machine_states = {zid: machine_states.get(zid, False) for zid in zone_ids}
     last_movement_time = {zid: last_movement_time.get(zid, 0) for zid in zone_ids}
+    manual_machine_control = {zid: manual_machine_control.get(zid, False) for zid in zone_ids}
+    danger_latch_time = {zid: danger_latch_time.get(zid, 0) for zid in zone_ids}
 
 async def update_analytics_loop():
     """Background loop to update analytics from DB every 5 seconds."""
@@ -122,18 +126,22 @@ async def get_stats():
 
 @app.post("/machine/state")
 async def set_machine_state(data: dict):
-    global machine_states, last_movement_time
+    global machine_states, last_movement_time, manual_machine_control
     zone_id = data.get("zone_id")
     active = data.get("active", False)
     
     if zone_id:
         machine_states[zone_id] = active
-        if active: last_movement_time[zone_id] = time.time()
+        manual_machine_control[zone_id] = active
+        if active:
+            last_movement_time[zone_id] = time.time()
     else:
         # Toggle all if no zone id
         for zid in machine_states:
             machine_states[zid] = active
-            if active: last_movement_time[zid] = time.time()
+            manual_machine_control[zid] = active
+            if active:
+                last_movement_time[zid] = time.time()
             
     return {"status": "success", "machine_states": machine_states}
 
@@ -265,45 +273,61 @@ async def websocket_endpoint(websocket: WebSocket):
             curr_time = time.time()
             for zone_id, status in zone_results.items():
                 has_worker = status['worker_count'] > 0
+                is_manual_mode = manual_machine_control.get(zone_id, False)
                 
                 # AUTOMATIC ACTIVATION: If crane detected or movement detected, start machine for this zone
                 # AUTO-FIX: Do not allow AI to start machine if a worker is in the zone!
-                if status['movement'] and not has_worker:
+                if status['movement'] and not has_worker and not is_manual_mode:
                     machine_states[zone_id] = True
                     last_movement_time[zone_id] = curr_time
-                elif curr_time - last_movement_time.get(zone_id, 0) > 0.8:
+                elif (not is_manual_mode) and curr_time - last_movement_time.get(zone_id, 0) > 0.8:
                     # After 0.8 seconds of stillness, revert to IDLE for snappy response
                     machine_states[zone_id] = False
                 
                 zone_machine_active = machine_states.get(zone_id, False)
                 # DANGER condition: Person in zone AND (Machine active via AI or manual)
                 is_danger = has_worker and zone_machine_active
+                collision_risk = status.get('collision_risk')
+                collision_with_running_machine = collision_risk and zone_machine_active
                 
-                # CRITICAL: If person is literally TOUCHING/INSIDE the machine (collision_risk)
-                if status.get('collision_risk'):
+                is_new_danger = False
+                latch_active = (curr_time - danger_latch_time.get(zone_id, 0)) < 3.0
+                
+                if collision_with_running_machine:
                     is_danger = True
-                    alerts.append(f"CRITICAL: {status['name']} - Person TOUCHING Machine!")
-                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], type="PROXIMITY_VIOLATION", frame=frame))
-                    # Trigger immediate analytics refresh
-                    asyncio.create_task(refresh_analytics_now())
+
+                if is_danger and not latch_active:
+                    is_new_danger = True
+                    danger_latch_time[zone_id] = curr_time
+                elif is_danger:
+                    danger_latch_time[zone_id] = curr_time
+                    
+                latched_danger = is_danger or latch_active
 
                 # AUTOMATIC FIX: If danger is detected, instantly cut off the machine
                 if is_danger:
                     machine_states[zone_id] = False
+                    manual_machine_control[zone_id] = False
                     zone_machine_active = False
                     last_movement_time[zone_id] = 0
 
-                status['danger'] = is_danger 
+                status['danger'] = latched_danger 
                 status['machine_active'] = zone_machine_active
                 status['warning'] = status['worker_count'] > 0 # Warning if person is in zone at all
                 
-                if is_danger and not status.get('collision_risk'):
-                    alerts.append(f"CRITICAL: {status['name']} - Worker in Danger Zone!")
-                    asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], frame=frame))
-                    # Trigger immediate analytics refresh
-                    asyncio.create_task(refresh_analytics_now())
-                elif status['warning'] and not is_danger:
-                    alerts.append(f"WARNING: {status['name']} - Worker touching boundary")
+                if latched_danger:
+                    if collision_risk:
+                        alerts.append(f"CRITICAL: {status['name']} - Person TOUCHING Machine!")
+                        if is_new_danger:
+                            asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], type="PROXIMITY_VIOLATION", frame=frame))
+                            asyncio.create_task(refresh_analytics_now())
+                    else:
+                        alerts.append(f"CRITICAL: {status['name']} - Worker in Danger Zone!")
+                        if is_new_danger:
+                            asyncio.create_task(alert_engine.save_incident(zone_id, status['name'], frame=frame))
+                            asyncio.create_task(refresh_analytics_now())
+                elif status['warning']:
+                    alerts.append(f"WARNING: {status['name']} - Dont start the machine")
 
             # Encode and Send
             for det in detections:

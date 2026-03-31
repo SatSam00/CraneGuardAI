@@ -25,14 +25,15 @@ class CraneDetector:
         # 0: person, 5: bus (large machinery), 7: truck (cranes), 58: forklift
         self.target_classes = [0, 5, 7, 58]
         self.class_conf_thresholds = {
-            "person": 0.22,
+            "person": 0.3,
             "truck": 0.32,
             "bus": 0.32,
             "train": 0.32,
             "forklift": 0.3,
         }
-        self.person_min_height = 28
-        self.person_min_width = 12
+        self.person_min_height = 44
+        self.person_min_width = 16
+        self.person_min_area = 900
         
         # Track-to-Class mapping to ensure ID stability
         self.track_class_map = {}
@@ -55,6 +56,8 @@ class CraneDetector:
 
             if class_name == 'person':
                 if h < self.person_min_height or w < self.person_min_width:
+                    continue
+                if (w * h) < self.person_min_area:
                     continue
                 aspect_ratio = w / max(h, 1)
                 if aspect_ratio < 0.15 or aspect_ratio > 1.2:
