@@ -1,15 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
+import { WS_URL } from '../config';
+
 const WebSocketContext = createContext(null);
 
 export const WebSocketProvider = ({ children }) => {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState('connecting');
+  const [cameraId, setCameraId] = useState('0');
   const ws = useRef(null);
   const latestPayloadRef = useRef(null);
   const rafRef = useRef(null);
-  const host = window.location.hostname || '127.0.0.1';
-  const url = `ws://${host}:8200/ws/feed`;
+  const url = `${WS_URL}/ws/feed?camera_id=${cameraId}`;
 
   useEffect(() => {
     const connect = () => {
@@ -59,7 +61,7 @@ export const WebSocketProvider = ({ children }) => {
   }, [url]);
 
   return (
-    <WebSocketContext.Provider value={{ data, status }}>
+    <WebSocketContext.Provider value={{ data, status, cameraId, setCameraId }}>
       {children}
     </WebSocketContext.Provider>
   );

@@ -5,8 +5,11 @@ import { ZoneCard } from '../components/ZoneCard';
 import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 
+import { API_URL } from '../config';
+
 export default function LiveMonitor({ selectedZone, onZoneSelect }) {
-  const { data, status } = useWebSocketData();
+  const { data, status, cameraId, setCameraId } = useWebSocketData();
+  const [cameras, setCameras] = React.useState([]);
   const canvasRef = useRef(null);
 
   const drawContained = (ctx, img, canvas) => {
@@ -101,11 +104,15 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
     }
   }, [data]);
 
+    React.useEffect(() => {
+        fetch(`${API_URL}/cameras`).then(res => res.json()).then(setCameras);
+    }, []);
+
   const toggleMachine = async (zoneId = null) => {
     const currentState = zoneId ? machineStates[zoneId] : Object.values(machineStates).some(s => s);
     const newState = !currentState;
     
-    await fetch('/api/machine/state', {
+    await fetch(`${API_URL}/machine/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ zone_id: zoneId, active: newState })
@@ -125,7 +132,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
     setEnabledZones(prev => ({ ...prev, [zoneId]: newState }));
     
     // Sync with backend so it stops processing this zone
-    await fetch('/api/zones/toggle', {
+    await fetch(`${API_URL}/zones/toggle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ zone_id: zoneId, enabled: newState })
@@ -148,47 +155,62 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
         onDismiss={() => setDismissedAlerts(true)}
       />
       
-      <div className="p-8 grid grid-cols-12 gap-8 flex-1 overflow-auto relative z-10">
-        <div className="col-span-9 flex flex-col gap-4">
-          <div className="flex justify-between items-end bg-card/80 backdrop-blur-xl p-4 border border-white/5 rounded-t-xl">
-             <div className="flex items-center gap-6">
-                <div>
-                   <h2 className="text-3xl font-display font-bold text-white tracking-widest leading-none">
-                      {focusZone ? `MAGNIFIED VIEW: ${zoneStatus[Object.keys(zoneStatus).find(id => id === focusZone || zoneStatus[id].name === focusZone || `Zone ${id}` === focusZone)]?.name || focusZone}` : 'PRIMARY BROADCAST'}
+      <div className="p-4 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8 flex-1 overflow-auto relative z-10">
+        <div className="col-span-12 md:col-span-9 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end bg-card/80 backdrop-blur-xl p-4 md:p-6 border border-white/5 rounded-t-xl gap-4">
+             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 w-full md:w-auto">
+                <div className="flex-1">
+                   <h2 className="text-xl md:text-3xl font-display font-bold text-white tracking-widest leading-tight">
+                      {focusZone ? `MAGNIFIED: ${zoneStatus[Object.keys(zoneStatus).find(id => id === focusZone || zoneStatus[id].name === focusZone || `Zone ${id}` === focusZone)]?.name || focusZone}` : 'PRIMARY BROADCAST'}
                    </h2>
-                   <div className="flex items-center gap-2 mt-2">
-                       <div className={`w-1.5 h-1.5 rounded-full ${status === 'connected' ? 'bg-teal-500 animate-pulse' : 'bg-red-500'}`} title={status} />
-                       <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em]">{status}</span>
+                   <div className="flex items-center gap-2 mt-1 md:mt-2">
+                        <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)] animate-pulse' : 'bg-red-500'}`} title={status} />
+                        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em]">{status}</span>
                    </div>
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap md:flex-nowrap gap-2 w-full md:w-auto">
                    <button 
                      onClick={() => setFocusZone(null)}
                      className={clsx(
-                        "px-3 py-1.5 rounded text-[10px] font-mono font-bold tracking-widest transition-all border",
+                        "flex-1 md:flex-none px-3 py-1.5 rounded text-[10px] font-mono font-bold tracking-widest transition-all border",
                         !focusZone ? "bg-teal-500 border-teal-500 text-background shadow-[0_0_10px_rgba(20,184,166,0.3)]" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
                      )}
                    >
-                     COMBINE ALL
+                     COMBINE
                    </button>
                    <button 
                      onClick={() => toggleMachine()}
                      className={clsx(
-                        "px-4 py-1.5 rounded font-display font-bold text-sm tracking-widest transition-all",
+                        "flex-1 md:flex-nowrap px-4 py-1.5 rounded font-display font-bold text-sm tracking-widest transition-all",
                         Object.values(machineStates).some(s => s) 
                            ? "bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]" 
                            : "bg-slate-700 text-slate-400 hover:bg-slate-600"
                      )}
                    >
-                     {Object.values(machineStates).some(s => s) ? 'STOP MACHINE' : 'START MACHINE'}
+                     {Object.values(machineStates).some(s => s) ? 'STOP' : 'START'}
                    </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                   {cameras.map(cam => (
+                      <button 
+                        key={cam.id}
+                        onClick={() => setCameraId(cam.id)}
+                        className={clsx(
+                          "px-2 md:px-3 py-1 md:py-1.5 rounded text-[9px] md:text-[10px] font-mono font-bold transition-all border",
+                          cameraId === cam.id ? "bg-teal-500/20 border-teal-500 text-teal-400" : "bg-white/5 border-white/5 text-slate-500 hover:bg-white/10"
+                        )}
+                      >
+                        {cam.name}
+                      </button>
+                   ))}
                 </div>
              </div>
              
-             <div className="text-[10px] font-mono text-slate-600 flex flex-col items-end">
-                <span>SIGNAL: {focusZone ? 'ENHANCED LENS' : 'WIDE FIELD'}</span>
-                <span className="mt-1 text-teal-500/50 uppercase tracking-widest font-bold">Encrypted Stream</span>
+             <div className="hidden md:flex text-[10px] font-mono text-slate-600 flex-col items-end">
+                <span>SIGNAL: {focusZone ? 'ENHANCED' : 'WIDE'}</span>
+                <span className="mt-1 text-teal-500/50 uppercase tracking-widest font-bold">Encrypted</span>
              </div>
           </div>
           
@@ -253,7 +275,7 @@ export default function LiveMonitor({ selectedZone, onZoneSelect }) {
           </div>
         </div>
 
-        <div className="col-span-3 flex flex-col gap-4 overflow-y-auto pr-2">
+        <div className="col-span-12 md:col-span-3 flex flex-col gap-4 overflow-y-auto pr-2">
             <h3 className="font-display font-bold text-slate-400 text-sm tracking-widest px-1">ACTIVE MONITORING</h3>
             {Object.entries(zoneStatus).length > 0 ? (
                 Object.entries(zoneStatus).map(([id, status]) => {

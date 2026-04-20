@@ -45,11 +45,11 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
   };
 
   return (
-    <div className="p-8 flex flex-col gap-8 h-full bg-[#0a0c0f] overflow-hidden text-slate-200">
+    <div className="p-4 md:p-8 flex flex-col gap-6 md:gap-8 h-full bg-[#0a0c0f] overflow-y-auto md:overflow-hidden text-slate-200">
       <div className="flex justify-between items-start">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-4">
-            <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none">SPATIAL RISK HEATMAP</h2>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <h2 className="text-2xl md:text-4xl font-display font-bold text-white tracking-widest leading-none">SPATIAL RISK HEATMAP</h2>
             {selectedZone && (
               <div className="bg-teal-500/20 border border-teal-500/50 px-3 py-1 rounded text-[10px] font-mono text-teal-400 font-bold animate-pulse">
                 SYNCED: {selectedZone}
@@ -64,13 +64,13 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
           <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em]">Temporal Aggregation of Aisle Violations</p>
         </div>
         
-        <div className="flex items-center gap-4">
-             <div className="flex flex-col gap-1 items-end mr-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
+             <div className="flex flex-col gap-1 items-start sm:items-end w-full md:w-auto">
                   <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest">Zone Filter</span>
                   <select 
                     value={selectedZone || ''} 
                     onChange={(e) => onZoneSelect(e.target.value || null)}
-                    className="bg-card/50 border border-white/10 rounded px-4 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer backdrop-blur-md"
+                    className="w-full md:w-auto bg-card/50 border border-white/10 rounded px-4 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer backdrop-blur-md"
                   >
                     <option value="">All Zones</option>
                     {Object.keys(stats.distribution).map(z => (
@@ -79,13 +79,13 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                   </select>
              </div>
 
-             <div className="flex items-center gap-6 bg-card/30 p-4 border border-white/5 rounded-xl backdrop-blur-md">
+             <div className="hidden xl:flex items-center gap-6 bg-card/30 p-4 border border-white/5 rounded-xl backdrop-blur-md">
                   <div className="flex flex-col gap-2">
                        <div className="text-[8px] font-mono text-slate-500 uppercase tracking-widest text-right">Risk Gradient</div>
                        <div className="flex gap-4">
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> 🔴 RED: CRITICAL HAZARD (MACHINE ON + HUMAN)</div>
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> 🟡 YELLOW: WARNING (IDLE MACHINE + HUMAN)</div>
-                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-teal-500/10 border border-teal-400 rounded-sm" /> 🟢 GREEN: SAFE (NOMINAL)</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-red-500/60 border border-red-400 rounded-sm" /> 🔴 RED: CRITICAL</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-amber-500/40 border border-amber-400 rounded-sm" /> 🟡 YELLOW: WARNING</div>
+                           <div className="flex items-center gap-2 text-[9px] font-mono"><div className="w-2.5 h-2.5 bg-teal-500/10 border border-teal-400 rounded-sm" /> 🟢 GREEN: SAFE</div>
                        </div>
                   </div>
              </div>
@@ -103,7 +103,7 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
              <span className="font-mono text-xs uppercase tracking-widest">Compiling Spatial Data...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-6 flex-1 max-h-[600px] overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 flex-1 overflow-y-auto">
             {Object.entries(zoneStatus).map(([id, info]) => {
                 const data = getZoneDisplayData(id, info);
                 const isSelected = selectedZone === id || selectedZone === data.name || selectedZone === `Zone ${id}`;
@@ -167,8 +167,8 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
           </div>
         )}
 
-        <div className="flex justify-between items-center mt-auto border-t border-white/5 pt-6 relative z-10">
-            <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-auto border-t border-white/5 pt-6 relative z-10 gap-6">
+            <div className="flex items-center gap-4 w-full sm:w-auto">
                <div className="flex flex-col">
                   <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest mb-1">System Health</span>
                   <div className="flex items-center gap-2">
@@ -179,12 +179,12 @@ export default function Heatmap({ selectedZone, onZoneSelect }) {
                <div className="w-[1px] h-8 bg-white/5 ml-2" />
                <div className="flex flex-col ml-2">
                   <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest mb-1">Last Sample</span>
-                  <span className="text-[10px] font-mono text-slate-400 font-bold">{new Date().toLocaleTimeString()}</span>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold flex gap-1">{new Date().toLocaleTimeString().split(' ')}</span>
                </div>
             </div>
             
-            <button className="flex items-center gap-3 bg-white/5 hover:bg-white/10 text-white font-display text-xs font-bold tracking-[0.2em] px-8 py-3 rounded-full border border-white/10 transition-all active:scale-95 shadow-xl">
-                EXPORT ARCHITECTURAL DATA
+            <button className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white/5 hover:bg-white/10 text-white font-display text-[10px] md:text-xs font-bold tracking-[0.2em] px-8 py-3 rounded-full border border-white/10 transition-all active:scale-95 shadow-xl uppercase">
+                EXPORT DATA
             </button>
         </div>
       </div>

@@ -6,9 +6,13 @@ import { AlertBanner } from '../components/AlertBanner';
 import { Shield, AlertCircle, ScanEye, Timer, CheckCircle, Loader2 } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { clsx } from 'clsx';
+import { Camera } from 'lucide-react';
+
+import { API_URL } from '../config';
 
 export default function Dashboard({ selectedZone, onZoneSelect }) {
-  const { data: wsData, status } = useWebSocketData();
+  const { data: wsData, status, cameraId, setCameraId } = useWebSocketData();
+  const [cameras, setCameras] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [dismissedAlertIds, setDismissedAlertIds] = useState([]);
   const [acknowledgedIds, setAcknowledgedIds] = useState([]);
@@ -28,7 +32,11 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
       acknowledged: inc.acknowledged || acknowledgedIds.includes(inc.id)
     }));
 
-  const latestUnacknowledged = displayIncidents.find(inc => !inc.acknowledged && !dismissedAlertIds.includes(inc.id));
+  const latestUnacknowledged = displayIncidents.find(inc => 
+    !inc.acknowledged && 
+    !dismissedAlertIds.includes(inc.id) &&
+    (inc.type.startsWith('CRITICAL:') || inc.type.startsWith('WARNING:'))
+  );
 
   // Recalculate local stats based on selection
   useEffect(() => {
@@ -84,6 +92,18 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
     }
   }, [wsData, selectedZone]);
 
+  useEffect(() => {
+    fetch(`${API_URL}/cameras`).then(res => res.json()).then(setCameras);
+  }, []);
+
+  const toggleZoneEnabled = async (zoneId, currentState) => {
+    await fetch(`${API_URL}/zones/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone_id: zoneId, enabled: !currentState })
+    });
+  };
+
   if (status !== 'connected' && !wsData) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500 h-full bg-[#0a0c0f]">
@@ -104,7 +124,7 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
   ];
 
   return (
-    <div className="p-8 flex flex-col gap-8 h-full overflow-y-auto bg-[#0a0c0f] text-slate-200 relative">
+    <div className="p-4 md:p-8 flex flex-col gap-6 md:gap-8 h-full overflow-y-auto bg-[#0a0c0f] text-slate-200 relative">
       <AlertBanner 
         alerts={latestUnacknowledged ? [`${latestUnacknowledged.type} IN ${latestUnacknowledged.zone_name}`] : []} 
         image={latestUnacknowledged?.frame_url}
@@ -114,10 +134,10 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
         }}
       />
       
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
         <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-4">
-                <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">ANALYTICS DASHBOARD</h2>
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+                <h2 className="text-2xl md:text-4xl font-display font-bold text-white tracking-widest leading-none drop-shadow-[0_0_15px_rgba(255,255,255,0.1)] uppercase">ANALYTICS DASHBOARD</h2>
                 {selectedZone && (
                   <div 
                     onClick={() => onZoneSelect(null)}
@@ -128,37 +148,36 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
                   </div>
                 )}
             </div>
-            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em]">{selectedZone ? `FILTERED INTELLIGENCE FOR ${selectedZone}` : 'Real-Time Safety Intelligence Matrix'}</p>
+            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em] max-w-xs md:max-w-none leading-relaxed">{selectedZone ? `FILTERED INTELLIGENCE FOR ${selectedZone}` : 'Real-Time Safety Intelligence Matrix'}</p>
         </div>
-        <div className="bg-card/50 backdrop-blur-xl px-4 py-2 border border-white/5 rounded-lg flex items-center gap-4 shadow-2xl">
-             <div className="flex flex-col items-end">
-                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest">Global Status</span>
-                <span className="text-xs font-bold text-teal-500 uppercase tracking-wider flex items-center gap-2">
-                   <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+        
+        <div className="bg-card/50 backdrop-blur-xl px-4 py-2 border border-white/5 rounded-lg flex items-center gap-4 shadow-2xl w-full sm:w-auto">
+             <div className="flex flex-col items-start sm:items-end flex-1">
+                <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest leading-none mb-1">Global Status</span>
+                <span className="text-[10px] md:text-xs font-bold text-teal-500 uppercase tracking-wider flex items-center gap-2 leading-none whitespace-nowrap">
+                   <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse shadow-[0_0_8px_rgba(20,184,166,0.6)]" />
                    All Systems Nominal
                 </span>
              </div>
-             <div className="p-2 bg-teal-500/10 rounded border border-teal-500/20">
-                <Shield className="text-teal-500" size={20} />
+             <div className="p-2 bg-teal-500/10 rounded border border-teal-500/20 hidden xs:block">
+                <Shield size={16} className="text-teal-500" />
              </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
         <StatCard label="TODAY'S VIOLATIONS" value={stats.violations} color="amber" icon={AlertCircle} subtext={selectedZone ? "ZONE SPECIFIC COUNT" : "REAL-TIME EVENT STREAM"} />
         <StatCard label="SAFETY SCORE" value={`${stats.score}%`} color={stats.score > 80 ? 'teal' : 'red'} icon={CheckCircle} subtext="LIVE RELIABILITY RATING" />
         <StatCard label={selectedZone ? "ACTIVE SELECTION" : "MONITORED ZONES"} value={stats.zones} color="slate" icon={ScanEye} subtext={selectedZone ? "FOCUSED VIEW" : "AUTOMATED COVERAGE"} />
         <StatCard label="AVG REACTION TIME" value={`${stats.reaction}s`} color="teal" icon={Timer} subtext="SYSTEM TO ALERT LATENCY" />
       </div>
 
-      <div className="grid grid-cols-3 gap-8">
-        <div className="col-span-2 bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 h-[450px] flex flex-col gap-6 shadow-inner">
-            <div className="flex justify-between items-center">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
+        <div className="xl:col-span-2 bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-4 md:p-8 min-h-[350px] md:h-[450px] flex flex-col gap-6 shadow-inner">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h3 className="font-display font-bold text-xl tracking-widest text-white uppercase">{selectedZone ? `${selectedZone} TRENDS` : 'SAFETY PERFORMANCE TRENDS'}</h3>
-                <div className="flex gap-2">
-                   <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
-                      <div className="w-2 h-2 rounded-full bg-teal-500" /> Operational Safety
-                   </div>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
+                    <div className="w-2 h-2 rounded-full bg-teal-500" /> Operational Safety
                 </div>
             </div>
             <div className="flex-1">
@@ -204,9 +223,9 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
             </div>
         </div>
         
-        <div className="bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-8 h-[450px] flex flex-col gap-8 shadow-inner">
+        <div className="bg-card/30 backdrop-blur-sm border border-white/5 rounded-2xl p-4 md:p-8 min-h-[400px] md:h-[450px] flex flex-col gap-6 md:gap-8 shadow-inner overflow-hidden">
              <h3 className="font-display font-bold text-xl tracking-widest text-white text-center uppercase">{selectedZone ? 'ZONE CONCENTRATION' : 'ZONE DISTRIBUTION'}</h3>
-             <div className="flex-1 flex flex-col items-center justify-center relative">
+             <div className="flex-1 flex flex-col items-center justify-center relative min-h-[220px]">
                  <div className="text-center z-10">
                     <div className="text-7xl font-display font-bold text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.2)]">{stats.violations}</div>
                     <div className="text-[10px] font-mono text-teal-500 uppercase tracking-[0.2em] font-bold">Today's Risk Events</div>
@@ -229,7 +248,22 @@ export default function Dashboard({ selectedZone, onZoneSelect }) {
                                   "transition-colors uppercase tracking-widest leading-none",
                                   isSelected ? "text-teal-400" : "text-slate-400 group-hover:text-teal-400"
                               )}>{label}</span>
-                              <span className="text-white font-bold leading-none">{val} <span className="text-[8px] text-slate-600 ml-1">ALERTS</span></span>
+                              <div className="flex items-center gap-4">
+                                  <button 
+                                     onClick={(e) => {
+                                         e.stopPropagation();
+                                         const zoneId = wsData.zones?.find(z => z.name === label)?.id;
+                                         if (zoneId) {
+                                             const isActive = wsData.zones?.find(z => z.id === zoneId)?.active;
+                                             toggleZoneEnabled(zoneId, isActive);
+                                         }
+                                     }}
+                                     className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold border ${wsData.zones?.find(z => z.name === label)?.active !== false ? 'bg-teal-500/10 border-teal-500/30 text-teal-400' : 'bg-red-500/10 border-red-500/30 text-red-500'}`}
+                                  >
+                                    {wsData.zones?.find(z => z.name === label)?.active !== false ? 'CAM ON' : 'CAM OFF'}
+                                  </button>
+                                  <span className="text-white font-bold leading-none">{val} <span className="text-[8px] text-slate-600 ml-1">ALERTS</span></span>
+                              </div>
                           </div>
                           <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden p-[1px]">
                               <div 

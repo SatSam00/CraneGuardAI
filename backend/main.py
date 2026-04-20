@@ -20,8 +20,8 @@ load_dotenv()
 from contextlib import asynccontextmanager
 
 DEFAULT_ZONES = [
-    {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},
-    {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True}
+    {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True, "camera_source": "0"},
+    {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True, "camera_source": "0"}
 ]
 
 # State management - machine active per zone
@@ -184,8 +184,17 @@ async def toggle_zone(data: dict):
 async def get_zones():
     return current_zones
 
+@app.get("/cameras")
+async def get_cameras():
+    return await alert_engine.get_cameras()
+
+@app.post("/cameras")
+async def save_cameras(cameras: list):
+    await alert_engine.save_cameras(cameras)
+    return {"status": "success"}
+
 @app.websocket("/ws/feed")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, camera_id: str = "0"):
     await websocket.accept()
     
     cap = None
@@ -199,7 +208,11 @@ async def websocket_endpoint(websocket: WebSocket):
         await camera_stream_lock.acquire()
         lock_acquired = True
 
-        src = camera_source
+        # Find camera source from ID
+        cameras = await alert_engine.get_cameras()
+        cam = next((c for c in cameras if str(c.get("id")) == str(camera_id)), None)
+        src = cam.get("source", camera_source) if cam else camera_source
+        
         if str(src).isdigit():
             src = int(src)
             
@@ -265,8 +278,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 cached_detections = detector.detect_and_track(frame)
             detections = cached_detections
             
-            # Check Zones (All zones, logic handles internal skipping)
-            zone_results = check_zones(detections, current_zones)
+            # Check Zones (Filtered by active camera)
+            active_zones = [z for z in current_zones if str(z.get('camera_source', '0')) == str(camera_id)]
+            zone_results = check_zones(detections, active_zones)
             
             # Process Alerts
             alerts = []
@@ -331,9 +345,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # Encode and Send
             for det in detections:
-                # SKIP detection if it is inside a DISABLED zone
+                # SKIP detection if it is inside a DISABLED active zone
                 skip_det = False
-                for zone in current_zones:
+                for zone in active_zones:
                     if not zone.get('active', True):
                         if is_box_in_zone(det['bbox'], zone['polygon']):
                             skip_det = True
@@ -347,7 +361,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 cv2.putText(frame, f"{det['class']} {det['id']}", (bbox[0], bbox[1]-10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            for zone in current_zones:
+            for zone in active_zones:
                 is_active = zone.get('active', True)
                 points = [tuple(p) for p in zone['polygon']]
                 
@@ -381,6 +395,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "machine_states": machine_states,
                 "stats": cached_stats,
                 "incidents": cached_incidents,
+                "zones": current_zones,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
@@ -390,7 +405,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(max(0, target_frame_time - elapsed))
 
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print("Client disconnected ")
     except Exception as e:
         print(f"WS error: {e}")
     finally:

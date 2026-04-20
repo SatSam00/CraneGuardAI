@@ -51,6 +51,7 @@ class AlertEngine:
         self.snapshots_dir = "snapshots"
         os.makedirs(self.snapshots_dir, exist_ok=True)
         self.zones_file = "zones.local.json"
+        self.cameras_file = "cameras.local.json"
 
     def _read_local_zones(self):
         if not os.path.exists(self.zones_file):
@@ -69,6 +70,24 @@ class AlertEngine:
                 json.dump(zones, f)
         except Exception as e:
             print(f"Local zone write failed: {e}")
+
+    def _read_local_cameras(self):
+        if not os.path.exists(self.cameras_file):
+            return [{"id": "0", "name": "Primary Camera", "source": "0"}]
+        try:
+            with open(self.cameras_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else [{"id": "0", "name": "Primary Camera", "source": "0"}]
+        except Exception as e:
+            print(f"Local camera read failed: {e}")
+            return [{"id": "0", "name": "Primary Camera", "source": "0"}]
+
+    def _write_local_cameras(self, cameras):
+        try:
+            with open(self.cameras_file, "w", encoding="utf-8") as f:
+                json.dump(cameras, f)
+        except Exception as e:
+            print(f"Local camera write failed: {e}")
 
     def _save_frame_locally(self, frame, incident_id):
         """Synchronous function to save frame to disk - runs in thread pool."""
@@ -321,8 +340,27 @@ class AlertEngine:
                 return local_zones
             # Default fallback for POC
             return [
-                {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True},
-                {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True}
+                {"id": "A1", "name": "Zone A1", "polygon": [[100,100], [400,100], [400,400], [100,400]], "active": True, "camera_source": "0"},
+                {"id": "A2", "name": "Zone A2", "polygon": [[600,100], [900,100], [900,400], [600,400]], "active": True, "camera_source": "0"}
             ]
         response = supabase.table("zones").select("*").execute()
         return response.data
+
+    async def get_cameras(self):
+        if not supabase:
+            return self._read_local_cameras()
+        try:
+            response = supabase.table("cameras").select("*").execute()
+            return response.data
+        except:
+            return self._read_local_cameras()
+
+    async def save_cameras(self, cameras):
+        if not supabase:
+            self._write_local_cameras(cameras)
+            return
+        try:
+            supabase.table("cameras").upsert(cameras).execute()
+        except Exception as e:
+            print(f"Supabase cameras save failed: {e}")
+            self._write_local_cameras(cameras)

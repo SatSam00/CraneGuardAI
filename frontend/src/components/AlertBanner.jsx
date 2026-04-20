@@ -46,10 +46,10 @@ export const AlertBanner = ({ alerts, image, onDismiss }) => {
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -100, opacity: 0 }}
-          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-4xl backdrop-blur-md text-white rounded-2xl border overflow-hidden flex items-stretch gap-0 ${ui.container}`}
+          className={`fixed top-4 md:top-6 left-1/2 -translate-x-1/2 z-[100] w-[95%] md:w-[90%] max-w-4xl backdrop-blur-md text-white rounded-2xl border overflow-hidden flex flex-col md:flex-row items-stretch gap-0 ${ui.container}`}
         >
           {image && (
-            <div className="w-1/3 min-w-[200px] border-r border-white/10 relative overflow-hidden group">
+            <div className="w-full md:w-1/3 h-48 md:h-auto border-b md:border-b-0 md:border-r border-white/10 relative overflow-hidden group">
                <img 
                  src={image} 
                  alt="Violation Evidence" 

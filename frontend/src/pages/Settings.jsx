@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, Bell, ShieldCheck, Map, Trash2, Plus, Loader2, Check } from 'lucide-react';
+import { Camera, Bell, ShieldCheck, Map, Trash2, Plus, Loader2, Check, Video } from 'lucide-react';
 import { useWebSocketData } from '../context/WebSocketContext';
 
+import { API_URL } from '../config';
+
 export default function Settings() {
-    const { data: wsData, status } = useWebSocketData();
+    const { data: wsData, status, cameraId, setCameraId } = useWebSocketData();
   const [config, setConfig] = useState({
-    cameraSource: '0',
     telegramToken: '',
     telegramChatId: '',
     alertCooldown: 30,
@@ -13,14 +14,18 @@ export default function Settings() {
   });
 
   const [zones, setZones] = useState([]);
+    const [cameras, setCameras] = useState([]);
     const [loadingZones, setLoadingZones] = useState(true);
+    const [loadingCameras, setLoadingCameras] = useState(true);
     const [saveState, setSaveState] = useState('idle');
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [newZoneName, setNewZoneName] = useState('');
+    const [newCamName, setNewCamName] = useState('');
+    const [newCamSource, setNewCamSource] = useState('');
     const [selectedZoneId, setSelectedZoneId] = useState(null);
     const [draftRect, setDraftRect] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
-        const [canvasSize, setCanvasSize] = useState({ width: 1280, height: 720 });
+    const [canvasSize, setCanvasSize] = useState({ width: 1280, height: 720 });
 
     const canvasRef = useRef(null);
     const frameImageRef = useRef(null);
@@ -29,19 +34,18 @@ export default function Settings() {
     const frameSrc = wsData?.frame ? `data:image/jpeg;base64,${wsData.frame}` : null;
 
   useEffect(() => {
-        const loadZones = async () => {
-            try {
-                const res = await fetch('/api/zones');
-                const data = await res.json();
-                if (Array.isArray(data)) {
-                    setZones(data);
-                }
-            } finally {
-                setLoadingZones(false);
-            }
+        const load = async () => {
+             const zRes = await fetch(`${API_URL}/zones`);
+             const cRes = await fetch(`${API_URL}/cameras`);
+             const zData = await zRes.json();
+             const cData = await cRes.json();
+             if (Array.isArray(zData)) setZones(zData);
+             if (Array.isArray(cData)) setCameras(cData);
+             setLoadingZones(false);
+             setLoadingCameras(false);
         };
 
-        loadZones();
+        load();
   }, []);
 
     const drawZonePolygon = (ctx, zone, highlighted = false) => {
@@ -170,7 +174,8 @@ export default function Settings() {
             id: zoneId,
             name: zoneLabel,
             polygon,
-            active: true
+            active: true,
+            camera_source: cameraId || '0'
         };
 
         const nextZones = [...zones, nextZone];
@@ -182,6 +187,34 @@ export default function Settings() {
         setIsDrawingMode(false);
     };
 
+    const addCamera = async () => {
+        if (!newCamName || !newCamSource) return;
+        const nextCam = {
+            id: `CAM_${Date.now()}`,
+            name: newCamName,
+            source: newCamSource
+        };
+        const nextCameras = [...cameras, nextCam];
+        setCameras(nextCameras);
+        await fetch('/api/cameras', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nextCameras)
+        });
+        setNewCamName('');
+        setNewCamSource('');
+    };
+
+    const removeCamera = async (id) => {
+        const nextCameras = cameras.filter(c => c.id !== id);
+        setCameras(nextCameras);
+        await fetch(`${API_URL}/cameras`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nextCameras)
+        });
+    };
+
     const clearDraft = () => {
         setDraftRect(null);
         dragStartRef.current = null;
@@ -190,7 +223,7 @@ export default function Settings() {
     const syncZones = async (nextZones) => {
         setSaveState('saving');
         try {
-            await fetch('/api/zones', {
+            await fetch(`${API_URL}/zones`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(nextZones)
@@ -207,29 +240,73 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-8 flex flex-col gap-8 h-full bg-background overflow-y-auto">
+    <div className="p-4 md:p-8 flex flex-col gap-8 h-full bg-background overflow-y-auto">
       <div>
         <h2 className="text-4xl font-display font-bold text-white tracking-widest leading-none">SYSTEM SETTINGS</h2>
         <p className="text-xs font-mono text-slate-500 mt-2">CONFIGURE HARDWARE AND ALERT PARAMETERS</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-20 md:pb-0">
         <div className="space-y-8">
-            {/* Camera Config */}
+            {/* Camera Management */}
             <div className="bg-card border border-white/5 rounded-2xl p-6 space-y-4">
-                <div className="flex items-center gap-3 text-white border-b border-white/5 pb-4 mb-4">
-                    <Camera size={20} className="text-teal-500" />
-                    <h3 className="font-display font-bold">CAMERA SOURCE</h3>
+                <div className="flex items-center justify-between text-white border-b border-white/5 pb-4 mb-4">
+                    <div className="flex items-center gap-3">
+                        <Camera size={20} className="text-teal-500" />
+                        <h3 className="font-display font-bold">MONITORING CAMERAS</h3>
+                    </div>
                 </div>
-                <div className="space-y-4">
-                    <div>
-                        <label className="text-[10px] font-mono text-slate-500 uppercase block mb-1">RTSP URL or Device Index</label>
-                        <input 
-                            type="text" 
-                            className="w-full bg-background border border-white/10 rounded-lg px-4 py-2 text-sm font-mono text-teal-400 focus:outline-none focus:border-teal-500"
-                            value={config.cameraSource}
-                            onChange={(e) => setConfig({...config, cameraSource: e.target.value})}
-                        />
+                
+                <div className="space-y-3">
+                    {cameras.map(cam => (
+                        <div key={cam.id} className={`p-3 rounded-xl border flex items-center justify-between group transition-all ${cameraId === cam.id ? 'bg-teal-500/10 border-teal-500/50' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                            <div className="flex flex-col cursor-pointer" onClick={() => setCameraId(cam.id)}>
+                                <span className="text-xs font-bold text-white uppercase">{cam.name}</span>
+                                <span className="text-[9px] font-mono text-slate-500 truncate max-w-[150px]">{cam.source}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setCameraId(cam.id)}
+                                    className={`px-2 py-1 rounded text-[8px] font-mono font-bold border transition-all ${cameraId === cam.id ? 'bg-teal-500 text-background' : 'bg-white/5 border-white/10 text-slate-400'}`}
+                                >
+                                    {cameraId === cam.id ? 'ACTIVE' : 'SELECT'}
+                                </button>
+                                <button 
+                                    onClick={() => removeCamera(cam.id)}
+                                    className="p-1.5 text-slate-600 hover:text-red-500 transition-colors"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    <div className="pt-4 border-t border-white/5 mt-4">
+                        <label className="text-[10px] font-mono text-slate-600 uppercase block mb-3 underline decoration-teal-500/30">Provision New Hardware</label>
+                        <div className="flex flex-col gap-2">
+                            <input 
+                                type="text"
+                                placeholder="Camera Name (e.g. South Gate)"
+                                className="w-full bg-background border border-white/10 rounded px-3 py-2 text-xs text-white focus:border-teal-500 outline-none"
+                                value={newCamName}
+                                onChange={e => setNewCamName(e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text"
+                                    placeholder="RTSP URL / Index"
+                                    className="flex-1 bg-background border border-white/10 rounded px-3 py-2 text-xs text-white focus:border-teal-500 outline-none font-mono"
+                                    value={newCamSource}
+                                    onChange={e => setNewCamSource(e.target.value)}
+                                />
+                                <button 
+                                    onClick={addCamera}
+                                    className="bg-teal-500 text-background px-3 rounded hover:bg-teal-400 transition-colors"
+                                >
+                                    <Plus size={16} />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -304,10 +381,15 @@ export default function Settings() {
                                                     className={`bg-white/5 border p-4 rounded-xl flex items-center justify-between group cursor-pointer ${selectedZoneId === zone.id ? 'border-teal-500/70' : 'border-white/5'}`}
                                                     onClick={() => setSelectedZoneId(zone.id)}
                                                 >
-                            <div className="flex flex-col">
-                                <span className="font-display font-bold text-white uppercase">{zone.name}</span>
-                                                                <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">{(zone.polygon || []).length} POL POINTS</span>
-                            </div>
+                                                     <div className="flex flex-col">
+                                 <span className="font-display font-bold text-white uppercase">{zone.name}</span>
+                                 <div className="flex items-center gap-2">
+                                     <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">{(zone.polygon || []).length} POL POINTS</span>
+                                     <span className="text-[8px] font-mono text-teal-500/50 uppercase tracking-widest flex items-center gap-1">
+                                         <Video size={8} /> {cameras.find(c => c.id === zone.camera_source)?.name || 'UNKNOWN CAM'}
+                                     </span>
+                                 </div>
+                             </div>
                                                         <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={(e) => {
@@ -396,9 +478,9 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="flex justify-end gap-4 mt-auto pt-8 border-t border-white/5">
-         <button className="px-8 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-400 font-display font-bold hover:bg-white/10 transition-colors">DISCARD</button>
-            <button onClick={handleSave} className="px-8 py-3 bg-teal-500 rounded-lg text-background font-display font-bold hover:bg-teal-400 transition-transform active:scale-95 flex items-center gap-2">
+      <div className="flex flex-col md:flex-row justify-end gap-3 md:gap-4 mt-12 pb-32 md:pb-8 border-t border-white/5 pt-8">
+         <button className="flex-1 md:flex-none px-8 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-400 font-display font-bold hover:bg-white/10 transition-colors uppercase tracking-widest text-sm">DISCARD</button>
+            <button onClick={handleSave} className="flex-1 md:flex-none px-8 py-3 bg-teal-500 rounded-lg text-background font-display font-bold hover:bg-teal-400 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-widest text-sm shadow-lg shadow-teal-500/20">
                 {saveState === 'saving' && <Loader2 size={16} className="animate-spin" />}
                 {saveState === 'saved' && <Check size={16} />}
                 {saveState === 'saving' ? 'SAVING...' : saveState === 'saved' ? 'SAVED' : 'SAVE CONFIGURATION'}

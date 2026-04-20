@@ -23,3 +23,15 @@ build/
 
 # YOLO
 *.pt
+
+# Data & Snapshots
+backend/snapshots/
+backend/zones.local.json
+
+# Android
+frontend/android/.gradle/
+frontend/android/.gradle_home/
+frontend/android/local.properties
+frontend/android/app/build/
+frontend/android/build/
+*.apk

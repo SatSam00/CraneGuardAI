@@ -1,0 +1,8 @@
+{
+  "appId": "com.craneguard.ai",
+  "appName": "CraneGuard",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http"
+  }
+}
