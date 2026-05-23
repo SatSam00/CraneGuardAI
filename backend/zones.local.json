@@ -1,1 +1,1 @@
-[{"id": "Z1", "name": "z1", "polygon": [[140, 132], [678, 132], [678, 488], [140, 488]], "active": true}]
+[{"id": "TESTING", "name": "Testing", "polygon": [[793, 129], [1271, 129], [1271, 460], [793, 460]], "active": true, "camera_source": "0"}, {"id": "Z1", "name": "Z1", "polygon": [[50, 116], [678, 116], [678, 578], [50, 578]], "active": true, "camera_source": "0"}]

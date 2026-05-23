@@ -4,6 +4,9 @@ import LiveMonitor from './pages/LiveMonitor';
 import Dashboard from './pages/Dashboard';
 import Heatmap from './pages/Heatmap';
 import Settings from './pages/Settings';
+import DigitalTwin from './pages/DigitalTwin';
+import FatigueMonitor from './pages/FatigueMonitor';
+import ShiftReport from './pages/ShiftReport';
 
 function App() {
   const [activeTab, setActiveTab] = useState('live');
@@ -11,11 +14,14 @@ function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'live': return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
+      case 'live':     return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
       case 'dashboard': return <Dashboard selectedZone={selectedZone} onZoneSelect={(z) => setSelectedZone(z)} />;
-      case 'heatmap': return <Heatmap selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
+      case 'heatmap':  return <Heatmap selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
+      case 'twin':     return <DigitalTwin />;
+      case 'fatigue':  return <FatigueMonitor />;
+      case 'report':   return <ShiftReport />;
       case 'settings': return <Settings />;
-      default: return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
+      default:         return <LiveMonitor selectedZone={selectedZone} onZoneSelect={setSelectedZone} />;
     }
   };
 

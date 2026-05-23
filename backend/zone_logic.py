@@ -31,10 +31,10 @@ def is_box_in_zone(bbox, polygon_coords):
 
 def check_zones(detections, zones):
     """
-    detections: list of dicts with 'bbox' and 'class'
+    detections: list of dicts with 'bbox', 'class', and optionally 'forecast_center'
     zones: list of dicts with 'id', 'name', 'polygon' (list of [x,y])
     
-    Returns: status per zone
+    Returns: status per zone, including forecast_violations list
     """
     zone_results = {}
     
@@ -47,6 +47,7 @@ def check_zones(detections, zones):
         machines_in_zone = []
         movement_in_zone = False
         collision_risk = False
+        forecast_violation_ids = []  # Track IDs whose forecast path enters this zone
         
         # 1. Only process detections if zone is active
         if is_active:
@@ -71,6 +72,16 @@ def check_zones(detections, zones):
                     # Detect any movement/shaking in zone, or specific hand movement
                     if det.get('movement', 0) > 1.2:
                         movement_in_zone = True
+                
+                # ── FORECAST CHECK: Is this person's predicted position heading INTO the zone? ──
+                # We only check persons that are NOT already in the zone
+                # to avoid redundant alerts on top of existing danger alerts.
+                if det['class'] == 'person' and not in_zone and not parts_in_zone:
+                    forecast_pt = det.get('forecast_center')
+                    if forecast_pt is not None:
+                        fc_tuple = (int(forecast_pt[0]), int(forecast_pt[1]))
+                        if cv2.pointPolygonTest(poly_np, fc_tuple, False) >= 0:
+                            forecast_violation_ids.append(det['id'])
             
             # 2. Check for Proximity/Overlap (only for active zones)
             for worker in workers_in_zone:
@@ -90,7 +101,8 @@ def check_zones(detections, zones):
             "danger": False, # Calculated in main loop
             "collision_risk": collision_risk,
             "polygon": poly,
-            "movement": movement_in_zone
+            "movement": movement_in_zone,
+            "forecast_violation_ids": forecast_violation_ids  # NEW: person track IDs approaching this zone
         }
         
     return zone_results

@@ -1,11 +1,39 @@
+# ── Core API & Vision ───────────────────────────────────────────────────────
 fastapi
-uvicorn
-ultralytics
+uvicorn[standard]
+ultralytics>=8.0.0
 opencv-python
 deep-sort-realtime
-supabase
 python-dotenv
 websockets
 httpx
 numpy
 python-multipart
+
+# ── Database & Storage ───────────────────────────────────────────────────────
+supabase
+
+# ── Module 2b: SAHI — Sliced Adaptive Inference ──────────────────────────────
+sahi
+
+# ── Module 2c: Pose Estimation ───────────────────────────────────────────────
+# Bundled in ultralytics (yolov8s-pose.pt already in /backend)
+
+# ── Module 3B: Operator Fatigue Detection ───────────────────────────────────
+mediapipe
+
+# ── Module 3C: Acoustic Event Detection ─────────────────────────────────────
+sounddevice
+scipy
+# tensorflow-hub  # Uncomment to enable YAMNet — requires TF install
+# tensorflow      # Uncomment to enable YAMNet
+
+# ── Module 3F: AI-Generated Shift Report ─────────────────────────────────────
+anthropic
+reportlab          # PDF generation
+
+# ── Utility ──────────────────────────────────────────────────────────────────
+shapely            # Geometry ops (blind spot detection & zone calcs)
+aiortc             # WebRTC for AR Safety Overlay (Module 3D)
+av                 # Media codec support for WebRTC
+aiofiles

@@ -48,9 +48,15 @@ export const IncidentTable = ({ incidents, onAcknowledge }) => {
                 <td className="p-4 text-slate-400 text-xs hidden md:table-cell">{incident.type}</td>
                 <td className="p-4">
                   <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-tighter ${
-                    incident.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-500' : 'bg-amber-500/20 text-amber-500'
+                    incident.type === 'PRE_COLLISION_WARNING'
+                      ? 'bg-fuchsia-500/20 text-fuchsia-400'
+                      : incident.severity === 'CRITICAL'
+                        ? 'bg-red-500/20 text-red-500'
+                        : incident.severity === 'WARNING'
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : 'bg-slate-500/20 text-slate-400'
                   }`}>
-                    {incident.severity}
+                    {incident.type === 'PRE_COLLISION_WARNING' ? '⚡ PRE-COLLISION' : incident.severity}
                   </span>
                 </td>
                 <td className="p-4">

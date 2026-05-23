@@ -6,9 +6,11 @@ export const AlertBanner = ({ alerts, image, onDismiss }) => {
   const primaryAlert = alerts?.[0] || '';
   const severity = primaryAlert.startsWith('CRITICAL:')
     ? 'critical'
-    : primaryAlert.startsWith('WARNING:')
-      ? 'warning'
-      : 'notice';
+    : primaryAlert.startsWith('PRE-COLLISION:')
+      ? 'predictive'
+      : primaryAlert.startsWith('WARNING:')
+        ? 'warning'
+        : 'notice';
 
   const severityStyles = {
     critical: {
@@ -18,6 +20,14 @@ export const AlertBanner = ({ alerts, image, onDismiss }) => {
       chipText: 'MACHINE STOPPED',
       pulseText: 'System Auto-Locked',
       imageOverlay: 'to-red-600/20'
+    },
+    predictive: {
+      container: 'bg-fuchsia-700/90 border-fuchsia-500/50 shadow-[0_20px_50px_rgba(192,38,211,0.4)]',
+      heading: '⚡ PRE-COLLISION WARNING',
+      chip: 'bg-fuchsia-900',
+      chipText: 'TRAJECTORY ALERT',
+      pulseText: 'Worker Path Intersects Danger Zone',
+      imageOverlay: 'to-fuchsia-700/20'
     },
     warning: {
       container: 'bg-amber-600/90 border-amber-500/50 shadow-[0_20px_50px_rgba(245,158,11,0.3)]',
@@ -36,6 +46,7 @@ export const AlertBanner = ({ alerts, image, onDismiss }) => {
       imageOverlay: 'to-sky-700/20'
     }
   };
+
 
   const ui = severityStyles[severity];
 
