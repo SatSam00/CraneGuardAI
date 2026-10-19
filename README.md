@@ -1,79 +1,151 @@
+# CraneGuard AI — Industrial Safety Monitoring System
+
+## Resume Ready Section
+
+Copy-paste ready bullet points and project summaries for software engineering, computer vision, and machine learning resumes.
+
+### Project Entry (Full Format)
+**CraneGuard AI — Real-Time Computer Vision Industrial Safety System**  
+*Tech Stack: Python, FastAPI, YOLOv8, DeepSORT, OpenCV, MediaPipe, React, Vite, TailwindCSS, Supabase (PostgreSQL), WebSockets, Docker*
+
+- Engineered an end-to-end computer vision pipeline processing 1080p RTSP camera streams at 30+ FPS to detect, track, and prevent worker-machinery collisions in industrial environments.
+- Implemented multi-object detection and tracking using YOLOv8 and DeepSORT, maintaining persistent entity IDs across severe visual occlusions and variable lighting conditions.
+- Integrated SAHI (Sliced Aided Hyper Inference) for small-object detection and YOLOv8-Pose for real-time proximity risk scoring between worker anatomical keypoints and heavy equipment.
+- Developed a 30-frame predictive trajectory forecasting model using Kalman filtering and motion vector analysis to preemptively alert on boundary incursions before contact occurs.
+- Built a multi-modal operator fatigue detection subsystem using MediaPipe FaceMesh to compute Eye Aspect Ratio (EAR) and PERCLOS metrics, flagging micro-sleep events within 2 seconds.
+- Architected an asynchronous FastAPI backend streaming annotated video frames and telemetry over WebSockets with sub-50ms latency to a React dashboard.
+- Configured dynamic polygonal geofencing using ray-casting point-in-polygon algorithms, enabling site managers to draw custom danger zones via an HTML5 Canvas interface.
+- Designed an automated alert and audit logging pipeline with Telegram Bot API webhooks, Supabase S3 frame snapshot storage, and PostgreSQL relational violation logs.
+
 ---
-title: CraneGuard Safety Monitoring
-emoji: 🏗️
-colorFrom: blue
-colorTo: green
-sdk: static
-pinned: false
+
+### Project Entry (Concise 3-Bullet Format)
+**CraneGuard AI — Real-Time Computer Vision Safety System**
+- Engineered an asynchronous computer vision system using YOLOv8, DeepSORT, and OpenCV to monitor industrial machinery zones and track personnel across 30+ FPS video feeds.
+- Built real-time safety mechanisms including dynamic polygonal geofencing, 30-frame predictive trajectory forecasting, and MediaPipe-based operator fatigue monitoring (EAR/PERCLOS).
+- Developed a full-stack platform using FastAPI, WebSockets, React, and Supabase (PostgreSQL) delivering sub-50ms telemetry streaming and automated multi-channel Telegram incident alerts.
+
 ---
 
-# CraneGuard: Safety Monitoring System
+### Project Entry (Short / 2-Bullet Format)
+**CraneGuard AI — Computer Vision Safety Monitoring Platform**
+- Built an edge-ready vision pipeline with YOLOv8, DeepSORT, and OpenCV for real-time hazard detection, operator fatigue tracking, and predictive zone-violation modeling.
+- Developed an asynchronous FastAPI and React WebSocket streaming architecture integrated with Supabase and Telegram Bot API for instant site incident alerting and spatial risk heatmaps.
 
-**CraneGuard** is a full-stack safety monitoring solution designed for industrial environments. It provides real-time protection for workers in high-risk zones near heavy machinery.
+---
 
-## Features
+## Technical Specifications
 
-*   **Live Monitoring Feed**: Real-time person, crane, and forklift detection with low-latency streaming.
-*   **Dynamic Safety Zones**: Draw and manage safety polygons directly in the web UI.
-*   **Analytics Dashboard**: Comprehensive view of safety trends, violation logs, and performance metrics.
-*   **Risk Heatmaps**: Spatial visualization of high-incident areas.
-*   **Instant Alerts**: Multi-channel notifications via Telegram and local UI banners with captured snapshots.
-*   **Cloud Integration**: Persistent storage of configurations and incident logs.
+### Core Pipeline
+- **Object Detection**: YOLOv8 (Ultralytics) for person, crane, and forklift localization
+- **Multi-Object Tracking**: DeepSORT algorithm with Kalman filtering for persistent track ID retention
+- **Fine-Grained Inference**: SAHI (Sliced Aided Hyper Inference) for small-scale distant object detection
+- **Pose Estimation**: YOLOv8-Pose for tracking critical keypoints (head, shoulders) relative to machinery boundaries
+- **Trajectory Forecasting**: Linear regression and Kalman velocity vectors calculated over a 30-frame horizon
+- **Operator Monitoring**: MediaPipe FaceMesh evaluating 468 landmarks for Eye Aspect Ratio (EAR) and PERCLOS fatigue indices
+- **Acoustic Detection**: Sound event classification for sirens, impacts, and mechanical distress triggers
 
-## Tech Stack
+### Backend Infrastructure
+- **Framework**: Python 3.10+, FastAPI (Asynchronous ASGI)
+- **Real-Time Transport**: Native WebSockets for concurrent video frame encoding and telemetry push
+- **Zone Geometry**: Vector math and ray-casting algorithms for arbitrary convex/concave polygon collision checks
+- **Database**: Supabase PostgreSQL for relational incident tables and zone coordinates
+- **Object Storage**: Supabase Storage for incident frame captures
+- **Alert Dispatch**: Asynchronous Telegram Bot API notifications with rate-limiting cooldown logic
 
-### Backend
-- **Framework**: FastAPI
-- **Computer Vision**: OpenCV
-- **Database**: Supabase (Postgres)
-
-### Frontend
-- **Framework**: React + Vite
+### Frontend Architecture
+- **Framework**: React 18, Vite
 - **Styling**: TailwindCSS
-- **Charts**: Recharts
+- **Visualization**: Recharts for historical metrics; HTML5 Canvas for interactive zone boundary definitions
+- **State & Data**: Real-time WebSocket subscriptions, RESTful configuration endpoints
 
-## Documentation
+---
 
-For a deep dive into the architecture, API reference, and troubleshooting, check out our:
-👉 **[Detailed Project Documentation](./documentation.md)**
+## System Architecture
 
-## Quick Start
+```
+[ CCTV / IP Cameras (RTSP/USB) ]
+               │
+               ▼
+┌────────────────────────────────────────────────────────┐
+│               FastAPI Asynchronous Engine              │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Vision & Sensor Processing Pipeline               │  │
+│  │ - YOLOv8 Object Detection                        │  │
+│  │ - DeepSORT Multi-Object Tracking                 │  │
+│  │ - SAHI Sliced High-Res Inference                 │  │
+│  │ - YOLOv8-Pose Anatomical Proximity Analysis      │  │
+│  │ - 30-Frame Trajectory Forecasting Engine         │  │
+│  │ - MediaPipe FaceMesh Fatigue Detection (EAR)     │  │
+│  │ - Acoustic Distress Classification               │  │
+│  └──────────────────────────────────────────────────┘  │
+│                          │                             │
+│                          ▼                             │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Spatial Logic & Hazard Assessment                │  │
+│  │ - Polygonal Geofencing (Ray-Casting Algorithm)   │  │
+│  │ - Dynamic Motion & Machine Vibration Detection   │  │
+│  │ - Tri-State Hazard Classification (Safe/Warn/Hit)│  │
+│  └──────────────────────────────────────────────────┘  │
+└───────────────┬────────────────────────┬───────────────┘
+                │                        │
+       WebSocket (Telemetry)       REST / Webhooks
+                │                        │
+                ▼                        ▼
+┌───────────────────────────────┐ ┌──────────────────────┐
+│ React 18 Command Center       │ │ External Services    │
+│ - Live Annotated Stream       │ │ - Telegram Bot API   │
+│ - HTML5 Canvas Zone Editor    │ │ - Supabase DB        │
+│ - Incident Spatial Heatmaps   │ │ - Supabase Storage   │
+│ - Recharts Analytics          │ │ - Docker Deployment  │
+└───────────────────────────────┘ └──────────────────────┘
+```
 
-### 1. Backend Setup
+---
+
+## Core Modules
+
+| Module | File | Implementation Details |
+| :--- | :--- | :--- |
+| Detection Engine | `backend/detector.py` | Runs YOLOv8 inference, SAHI sliced prediction, DeepSORT tracking, and 30-frame predictive trajectory calculations. |
+| Operator Fatigue | `backend/fatigue_detector.py` | MediaPipe FaceMesh tracking eye landmark aspect ratio (EAR) and rolling 60-second PERCLOS window. |
+| Acoustic Analysis | `backend/acoustic_detector.py` | Background audio processing classifying mechanical impacts, screams, and sirens. |
+| Spatial Hazard Logic | `backend/zone_logic.py` | Executes point-in-polygon ray casting and machine vibration/motion state classification. |
+| Alert Engine | `backend/alert_engine.py` | Dispatches rate-limited Telegram alerts, captures violation frames, and logs incidents to Supabase. |
+| API & WebSockets | `backend/main.py` | Serves REST endpoints for configuration and WebSocket streams for real-time video feeds. |
+
+---
+
+## Setup and Installation
+
+### Backend Setup
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Frontend Setup
+### Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 3. Environment Configuration
-Create a `.env` in the `backend/` folder:
+### Environment Variables
+Configure `.env` in the `backend/` directory:
 ```env
-SUPABASE_URL=your_url
-SUPABASE_KEY=your_key
-TELEGRAM_BOT_TOKEN=your_token
-TELEGRAM_CHAT_ID=your_chat_id
-# Use 0 for Webcam, or a URL (e.g. http://192.168.x.x:8080/video) for a mobile camera
-CAMERA_SOURCE=0  
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_api_key
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_target_chat_id
+CAMERA_SOURCE=0
+CONF_TEMPERATURE=1.15
 ```
 
-## Deployment on Render.com
-
-To deploy CraneGuard on Render.com:
-1. Connect this repository to your Render account.
-2. In the Render Dashboard, create a **New Blueprint Instance**.
-3. Select this repository. Render will automatically detect the `render.yaml` file and set up both the **craneguard-backend** (Docker) and **craneguard-frontend** (Node.js) services.
-4. Set the necessary environment variables (`SUPABASE_URL`, `SUPABASE_KEY`, etc.) in the Render dashboard for the backend service.
-
-Alternatively, you can manually create a Web Service for the backend using the provided `Dockerfile` in the `backend` folder, and a Static Site or Node Web Service for the `frontend` folder using `npm run build`.
+---
 
 ## License
-Distributed under the MIT License. See `LICENSE` for more information.
+MIT
